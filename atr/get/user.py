@@ -125,7 +125,7 @@ async def preferences(session: web.Committer, _user_preferences: Literal["user/p
 
 
 @get.typed
-async def sessions(_session: web.Committer, _user_sessions: Literal["user/sessions"]) -> str:
+async def sessions(current_session: web.Committer, _user_sessions: Literal["user/sessions"]) -> str:
     """
     URL: /user/sessions
     """
@@ -143,13 +143,24 @@ async def sessions(_session: web.Committer, _user_sessions: Literal["user/sessio
 
     tbody = htm.Block(htm.tbody)
     for session in sessions:
+        current = session.sid_hash == current_session.session.sid_hash
+        terminate_form = await form.render(
+            model_cls=shared.user.TerminateSessionForm,
+            form_classes=".mb-0",
+            submit_classes="btn-sm btn-danger text-nowrap",
+            submit_label="Terminate",
+            defaults={"sid_hash": session.sid_hash},
+        )
         tbody.tr[
-            htm.td[session.uid],
+            htm.td[session.uid, htm.span(".badge.text-bg-secondary.ms-2")["Current session"] if current else ""],
             htm.td[datetime.datetime.fromtimestamp(session.cts).strftime("%Y-%m-%d %H:%M:%S")],
-            htm.td[datetime.datetime.fromtimestamp(session.last_account_check).strftime("%Y-%m-%d %H:%M:%S")]
-            if session.last_account_check
-            else "",
+            htm.td[
+                datetime.datetime.fromtimestamp(session.last_account_check).strftime("%Y-%m-%d %H:%M:%S")
+                if session.last_account_check
+                else ""
+            ],
             htm.td[session.ip_address or "unknown"],
+            htm.td[terminate_form],
         ]
 
     card.div(".card-body")[
@@ -161,6 +172,7 @@ async def sessions(_session: web.Committer, _user_sessions: Literal["user/sessio
                         htm.th["Created"],
                         htm.th["Last verified"],
                         htm.th["IP Address"],
+                        htm.th[""],
                     ]
                 ],
                 tbody.collect(),
@@ -168,6 +180,13 @@ async def sessions(_session: web.Committer, _user_sessions: Literal["user/sessio
         ]
     ]
     block.append(card)
+    terminate_all_form = await form.render(
+        model_cls=shared.user.TerminateAllSessionsForm,
+        submit_classes="btn-danger",
+        submit_label="Terminate all sessions",
+        confirm="This will log you out of every session, including this one. Continue?",
+    )
+    block.append(terminate_all_form)
     return await template.blank("User sessions", content=block.collect())
 
 

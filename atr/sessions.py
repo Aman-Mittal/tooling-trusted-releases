@@ -227,11 +227,13 @@ class Store:
             data.add(user_session)
             await data.commit()
 
-    async def revoke_by_uid(self, uid: str) -> int:
+    async def revoke_by_uid(self, uid: str, hsid: str | None = None) -> int:
         async with db.session() as data:
             statement = sqlmodel.select(sql.UserSession).where(
                 (sql.UserSession.uid == uid) | (sql.UserSession.admin_uid == uid)
             )
+            if hsid is not None:
+                statement = statement.where(sql.UserSession.sid_hash == hsid)
             result = await data.execute(statement)
             sessions = list(result.scalars().all())
             count = len(sessions)

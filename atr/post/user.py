@@ -16,6 +16,7 @@
 # under the License.
 from typing import Literal
 
+import asfquart.session
 import quart
 
 import atr.blueprints.post as post
@@ -23,7 +24,9 @@ import atr.config as config
 import atr.form as form
 import atr.get as get
 import atr.htm as htm
+import atr.log as log
 import atr.models as models
+import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
 import atr.tabulate as tabulate
@@ -117,6 +120,20 @@ async def tally(
     _render_summary_table(block, summary)
 
     return await template.blank("Vote tally", content=block.collect())
+
+
+@post.typed
+async def terminate_sessions(
+    session: web.Committer, _user_sessions: Literal["user/sessions"], sessions_form: shared.user.SessionsForm
+) -> web.WerkzeugResponse:
+    sid_hash = None if isinstance(sessions_form, shared.user.TerminateAllSessionsForm) else sessions_form.sid_hash
+    count = await asfquart.APP.sessions.revoke_by_uid(session.uid, sid_hash)
+    log.auth_event("sessions_terminated", session.uid, count=count, all_sessions=(sid_hash is None))
+    if (sid_hash is not None) and (sid_hash != session.session.sid_hash):
+        return await session.redirect(get.user.sessions)
+    await asfquart.session.aclear()
+    sessions.invalidate_cache()
+    return await session.redirect(get.root.index)
 
 
 async def _cache_session(session: web.Committer) -> None:

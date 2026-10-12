@@ -15,21 +15,25 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import hashlib
 import time
 import types
 import unittest.mock as mock
 
 import asfquart.base as base
 import pytest
+import quart
 import sqlalchemy.ext.asyncio
 import sqlmodel
 
 import atr.db as db
+import atr.get as get
 import atr.ldap as ldap
 import atr.models.sql as sql
+import atr.post as post
 import atr.sessions as sessions
 
-_MOCK_CONFIG = types.SimpleNamespace(MAX_SESSION_AGE=0)
+_MOCK_CONFIG = types.SimpleNamespace(ADMIN_ONLY=False, MAX_SESSION_AGE=0)
 
 _COUNTER = 0
 
@@ -210,6 +214,22 @@ async def test_multiple_sessions_same_user(store):
     assert await store.validate(hsid2) is not None
 
 
+@pytest.mark.parametrize(
+    ("uid", "admin_uid", "count"),
+    [("alice", None, 1), ("target", "alice", 1), ("bob", None, 0)],
+)
+async def test_revoke_by_uid_hsid_removes_only_that_owned_session(store, uid, admin_uid, count):
+    hsid = _hsid()
+    other_hsid = _hsid()
+    await store.create(hsid, _session_data(uid=uid, admin_uid=admin_uid))
+    await store.create(other_hsid, _session_data(uid="alice"))
+
+    assert await store.revoke_by_uid("alice", "missing") == 0
+    assert await store.revoke_by_uid("alice", hsid) == count
+    assert (await store.validate(hsid) is None) == (count == 1)
+    assert await store.validate(other_hsid) is not None
+
+
 async def test_revoke_by_uid_impersonation_by_target(store):
     hsid = _hsid()
     await store.create(hsid, _session_data(uid="target", admin_uid="admin_user"))
@@ -297,6 +317,53 @@ async def test_terminate_current_users_sessions_revokes_by_uid_clears_cookie_and
     mock_store.revoke_by_uid.assert_awaited_once_with("alice")
     mock_aclear.assert_awaited_once_with()
     mock_invalidate.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    ("target", "location", "remaining", "signed_in"),
+    [
+        (None, "/", {"bob"}, False),
+        ("current", "/", {"other", "bob"}, False),
+        ("other", "/user/sessions", {"current", "bob"}, True),
+        ("bob", "/user/sessions", {"current", "other", "bob"}, True),
+    ],
+)
+async def test_terminate_sessions_route(store, monkeypatch, target, location, remaining, signed_in):
+    hashes = {"current": hashlib.sha3_256(b"current-sid").hexdigest(), "other": "other", "bob": "bob"}
+    async with db.session() as data:
+        for name, hsid in hashes.items():
+            data.add(sql.UserSession(sid_hash=hsid, uid="bob" if (name == "bob") else "alice", uts=time.time()))
+        await data.commit()
+    app = quart.Quart(__name__)
+    app.secret_key = "test-key"
+    app.app_id = "atr"
+    app.sessions = store
+    monkeypatch.setattr("asfquart.APP", app)
+    monkeypatch.setattr("quart.request", quart.globals.request)
+    app.add_url_rule("/", endpoint=get.root.index.endpoint, view_func=get.root.index)
+    app.add_url_rule("/user/sessions", endpoint=get.user.sessions.endpoint, view_func=get.user.sessions)
+    app.add_url_rule(
+        "/user/sessions",
+        endpoint=post.user.terminate_sessions.endpoint,
+        view_func=post.user.terminate_sessions,
+        methods=["POST"],
+    )
+    client = app.test_client()
+    async with client.session_transaction() as cookie:
+        cookie["atr"] = {"sid": "current-sid"}
+
+    form = {"variant": "terminate_all", "csrf_token": "x"}
+    if target is not None:
+        form = {"variant": "terminate_one", "sid_hash": hashes[target], "csrf_token": "x"}
+    response = await client.post("/user/sessions", form=form)
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == location
+    names = {hsid: name for name, hsid in hashes.items()}
+    async with db.session() as data:
+        assert {names[s.sid_hash] for s in await data.usersession().all()} == remaining
+    async with client.session_transaction() as cookie:
+        assert ("atr" in cookie) is signed_in
 
 
 async def test_user_session_email_default():

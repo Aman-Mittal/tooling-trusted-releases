@@ -22,6 +22,8 @@ import atr.models.sql as sql
 
 type CACHE = Literal["cache"]
 type DELETE = Literal["delete"]
+type TERMINATE_ALL = Literal["terminate_all"]
+type TERMINATE_ONE = Literal["terminate_one"]
 
 
 class CacheUserForm(form.Empty):
@@ -32,8 +34,23 @@ class DeleteCacheForm(form.Empty):
     variant: DELETE = form.value(DELETE)
 
 
+type SessionsForm = Annotated[
+    TerminateAllSessionsForm | TerminateSessionForm,
+    form.DISCRIMINATOR,
+]
+
+
 class TallyForm(form.Form):
     thread: str = form.label("Thread URL or ID", required=True)
+
+
+class TerminateAllSessionsForm(form.Empty):
+    variant: TERMINATE_ALL = form.value(TERMINATE_ALL)
+
+
+class TerminateSessionForm(form.Empty):
+    variant: TERMINATE_ONE = form.value(TERMINATE_ONE)
+    sid_hash: str = form.label("Session", widget=form.Widget.HIDDEN)
 
 
 type UserCacheForm = Annotated[

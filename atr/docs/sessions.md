@@ -96,11 +96,12 @@ ATR does not limit the number of concurrent sessions per account. `Store.create`
 on every login, so a user signed in from several devices may hold many live sessions at once; there
 is no per-account ceiling.
 
-Unlimited concurrent sessions are safe here because revocation is always account-wide:
+Sessions can be revoked individually or account-wide:
 
 * `revoke_by_uid` deletes every session belonging to a uid in one operation, matching both the
   session's `uid` and any `admin_uid`, so an administrator's impersonation sessions are revoked as
   well.
+* Users can terminate individual sessions or all their sessions from the sessions page. Ending the current session or all sessions also logs out that browser.
 * Credential revocation calls `terminate_current_users_sessions`, which revokes all of the user's
   sessions, so a compromised credential cannot leave a stray session behind.
 * If an account is found to be disabled or banned, `deleted_or_banned` revokes all of its sessions
