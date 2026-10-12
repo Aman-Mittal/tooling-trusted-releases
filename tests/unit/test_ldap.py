@@ -19,6 +19,7 @@ import pathlib
 import unittest.mock as mock
 from typing import TYPE_CHECKING
 
+import asfquart
 import ldap3.core.exceptions
 import pytest
 
@@ -255,6 +256,42 @@ async def test_handle_update_revokes_all_credentials(monkeypatch: "MonkeyPatch")
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("purged", [False, True])
+@pytest.mark.parametrize(
+    ("tokens", "ssh_keys", "revoked"),
+    [([mock.sentinel.token], [], "tokens_revoked"), ([], [mock.sentinel.ssh_key], "ssh_keys_revoked")],
+)
+@pytest.mark.parametrize(("old_banned", "new_banned"), [([], []), (["yes"], []), ([], ["yes"])])
+async def test_handle_update_revokes_all_credentials_on_delete(
+    monkeypatch: "MonkeyPatch",
+    old_banned: list[str],
+    new_banned: list[str],
+    tokens: list[object],
+    ssh_keys: list[object],
+    revoked: str,
+    purged: bool,
+):
+    _logged, auth_events = _setup_ban_mocks(monkeypatch, session_count=1)
+    db_session = _mock_db_session(token_items=tokens, ssh_key_items=ssh_keys)
+    monkeypatch.setattr("atr.db.session", lambda: db_session)
+    purge = mock.Mock(return_value=purged)
+    monkeypatch.setattr("atr.cache.email_uid_purge_uid", purge)
+    save = mock.AsyncMock()
+    monkeypatch.setattr("atr.cache.email_uid_save_current_to_file", save)
+
+    payload = _make_pubsub_payload(uid="gone", old_banned=old_banned, new_banned=new_banned)
+    payload["change_type"] = "delete"
+    await ldap.handle_update(payload)
+
+    asfquart.APP.sessions.revoke_by_uid.assert_awaited_once_with("gone")
+    data = db_session.__aenter__.return_value
+    assert data.delete.await_args_list == [mock.call(item) for item in tokens + ssh_keys]
+    assert auth_events == ["account_deleted", "sessions_revoked", revoked]
+    purge.assert_called_once_with("gone")
+    assert save.await_count == int(purged)
+
+
+@pytest.mark.asyncio
 async def test_handle_update_revokes_only_sessions_when_no_keys_or_tokens(monkeypatch: "MonkeyPatch"):
     _logged, auth_events = _setup_ban_mocks(monkeypatch, session_count=1, token_count=0, ssh_key_count=0)
 
@@ -482,14 +519,12 @@ def _mock_db_session(token_items: list | None = None, ssh_key_items: list | None
 
     # execute() is called twice: first for tokens, then for SSH keys
     # Each result needs .scalars().all() to return the items
-    pat_query = mock.MagicMock()
-    pat_query.all = mock.AsyncMock(return_value=token_items or [])
-    mock_data.personal_access_token = mock.MagicMock(return_value=pat_query)
+    pat_result = mock.MagicMock()
+    pat_result.scalars.return_value.all.return_value = token_items or []
 
-    # execute() is now called only for SSH keys.
     ssh_result = mock.MagicMock()
     ssh_result.scalars.return_value.all.return_value = ssh_key_items or []
-    mock_data.execute = mock.AsyncMock(return_value=ssh_result)
+    mock_data.execute = mock.AsyncMock(side_effect=[pat_result, ssh_result])
 
     mock_session_ctx = mock.AsyncMock()
     mock_session_ctx.__aenter__ = mock.AsyncMock(return_value=mock_data)

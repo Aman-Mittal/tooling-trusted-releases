@@ -270,6 +270,16 @@ async def handle_update(payload: dict) -> str | None:
         log.debug(f"Ignoring LDAP pubsub event with no uid: {parsed.dn}")
         return
 
+    change_type = parsed.change_type.lower()
+    if change_type == "delete":
+        log.info(f"LDAP pubsub: user {uid} has been deleted")
+        log.auth_event("account_deleted", uid)
+        await _revoke_all_credentials(uid, log)
+        if cache.email_uid_purge_uid(uid):
+            await cache.email_uid_save_current_to_file()
+            log.info(f"LDAP pubsub: purged email cache entries for deleted user {uid}")
+        return
+
     was_banned = bool(parsed.old_attributes.asf_banned)
     now_banned = bool(parsed.new_attributes.asf_banned)
 
@@ -280,13 +290,6 @@ async def handle_update(payload: dict) -> str | None:
     elif was_banned and (not now_banned):
         log.info(f"LDAP pubsub: user {uid} has been reactivated")
         log.auth_event("account_reactivated", uid)
-
-    change_type = parsed.change_type.lower()
-    if change_type == "delete":
-        if cache.email_uid_purge_uid(uid):
-            await cache.email_uid_save_current_to_file()
-            log.info(f"LDAP pubsub: purged email cache entries for deleted user {uid}")
-        return
 
     old_emails = _emails_from_pubsub(parsed.old_attributes)
     new_emails = _emails_from_pubsub(parsed.new_attributes)
@@ -366,7 +369,7 @@ def _extract_uid_from_pubsub(payload: PubSubPayload) -> str | None:
 
 
 async def _revoke_all_credentials(uid: str, log) -> None:
-    """Revoke all sessions, PATs, and SSH keys for a banned user."""
+    """Revoke all sessions, PATs, and SSH keys for a banned or deleted user."""
     import asfquart
     import sqlmodel
 
@@ -375,7 +378,7 @@ async def _revoke_all_credentials(uid: str, log) -> None:
 
     session_count = await asfquart.APP.sessions.revoke_by_uid(uid)
     if session_count > 0:
-        log.info(f"LDAP pubsub: revoked {session_count} session(s) for banned user {uid}")
+        log.info(f"LDAP pubsub: revoked {session_count} session(s) for user {uid}")
         log.auth_event("sessions_revoked", uid)
 
     async with db.session() as data:
@@ -400,10 +403,10 @@ async def _revoke_all_credentials(uid: str, log) -> None:
             await data.commit()
 
     if tokens:
-        log.info(f"LDAP pubsub: revoked {len(tokens)} PAT(s) for banned user {uid}")
+        log.info(f"LDAP pubsub: revoked {len(tokens)} PAT(s) for user {uid}")
         log.auth_event("tokens_revoked", uid)
     if ssh_keys:
-        log.info(f"LDAP pubsub: revoked {len(ssh_keys)} SSH key(s) for banned user {uid}")
+        log.info(f"LDAP pubsub: revoked {len(ssh_keys)} SSH key(s) for user {uid}")
         log.auth_event("ssh_keys_revoked", uid)
 
 

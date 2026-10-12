@@ -65,15 +65,8 @@ async def authenticate() -> web.Committer:
     if config.get().ADMIN_ONLY and (not user.is_admin(web_session.uid)):
         raise base.ASFQuartException("ATR is currently available to administrators only", errorcode=403)
 
-    # if not await ldap.is_active(web_session.uid):
-    #     await sessions.deleted_or_banned(web_session.uid)
-    #     raise base.ASFQuartException("Account is disabled", errorcode=401)
-
-    # admin_uid = web_session.admin_uid
-    # if isinstance(admin_uid, str) and admin_uid and (not await ldap.is_active(admin_uid)):
-    #     await sessions.deleted_or_banned(admin_uid)
-    #     raise base.ASFQuartException("Account is disabled", errorcode=401)
-
+    # LDAP account checks run periodically in sessions.account_check, called by validate_session in server.py
+    # LDAP PubSub ban and delete events also revoke sessions, PATs, and SSH keys, in ldap.handle_update
     return web.Committer(web_session)
 
 
