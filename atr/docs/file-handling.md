@@ -4,7 +4,7 @@
 
 **Prev**: `7.21.` [SBOM architecture](sbom-architecture)
 
-**Next**: `8.` [Glossary](glossary)
+**Next**: `7.23.` [Application logs](application-logs)
 
 **Sections**:
 

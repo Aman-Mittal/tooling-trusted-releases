@@ -51,4 +51,5 @@ NOTE: This documentation is a work in progress.
   * `7.20.` [Resource management](resource-management)
   * `7.21.` [SBOM architecture](sbom-architecture)
   * `7.22.` [File handling](file-handling)
+  * `7.23.` [Application logs](application-logs)
 * `8.` [Glossary](glossary)
