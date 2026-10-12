@@ -43,7 +43,7 @@ _DOC_TREE_MAX_FILES: Final = 512
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["binary_artifact_paths", "source_artifact_paths", "download_path_suffix"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling", "all_files"]
-CHECK_VERSION: Final[str] = "10"
+CHECK_VERSION: Final[str] = "11"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -129,6 +129,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     await _check_source_artifact_present(args, recorder_source, relative_paths, base_path)
     await _check_documentation_tree(recorder_problems, relative_paths)
     await _check_download_suffix_duplication(args, recorder_suggestions, relative_paths)
+    await _check_checksum_types(recorder_suggestions, relative_paths_set)
 
     return None
 
@@ -163,6 +164,18 @@ async def _check_artifact_rules(
         # TODO: Allow "incubator" too as #114 requests?
         if "incubating" not in full_path.path.name:
             blockers.append("Podling artifact filenames must include 'incubating'")
+
+
+async def _check_checksum_types(recorder_suggestions: checks.Recorder, relative_paths: set[str]) -> None:
+    sha256_file_count = sum(1 for path in relative_paths if path.endswith(".sha256"))
+    sha512_file_count = sum(1 for path in relative_paths if path.endswith(".sha512"))
+    if (sha256_file_count == 0) or (sha512_file_count == 0):
+        return
+    await recorder_suggestions.suggestion(
+        "Release contains both SHA-256 and SHA-512 checksum files. Consider using one checksum algorithm consistently.",
+        {"sha256_file_count": sha256_file_count, "sha512_file_count": sha512_file_count},
+        primary_rel_path=None,
+    )
 
 
 async def _check_documentation_tree(

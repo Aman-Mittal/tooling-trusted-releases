@@ -68,6 +68,8 @@ under the `.atr` directory, and it rejects a `KEYS` file inside the artifact bun
 managed through the keys section. If the project is a podling, it requires the word "incubating" in
 artifact filenames.
 
+If the revision contains both `.sha256` and `.sha512` checksum files, the check records a release-level suggestion to use one checksum algorithm consistently. ASF policy does not forbid mixing them, but it is unusual.
+
 This check records separate checker keys for concerns, suggestions, and notes. It uses
 `atr.tasks.checks.paths.check_errors` for concerns, `atr.tasks.checks.paths.check_warnings` for
 suggestions, and `atr.tasks.checks.paths.check_success` for notes. The requirement that a release
