@@ -48,6 +48,7 @@ if TYPE_CHECKING:
 
 DISCRIMINATOR_NAME: Final[str] = "variant"
 DISCRIMINATOR: Final[Any] = schema.discriminator(DISCRIMINATOR_NAME)
+MAX_LIST_ITEMS: Final[int] = 1000
 
 _CONFIRM_PATTERN = re.compile(r"^[A-Za-z0-9 _.,!?-]+$")
 
@@ -430,6 +431,7 @@ def to_enum[EnumType: enum.Enum](v: Any, enum_class: type[EnumType]) -> EnumType
 
 
 def to_enum_set[EnumType: enum.Enum](v: Any, enum_class: type[EnumType]) -> set[EnumType]:
+    _check_list_size(v)
     members: dict[str, EnumType] = {member.value: member for member in enum_class}
     if isinstance(v, set):
         return {item for item in v if isinstance(item, enum_class)}
@@ -464,6 +466,7 @@ def to_filestorage(v: Any) -> datastructures.FileStorage | None:
 
 
 def to_filestorage_list(v: Any) -> list[datastructures.FileStorage]:
+    _check_list_size(v)
     if isinstance(v, list):
         result = []
         for item in v:
@@ -507,6 +510,7 @@ def to_optional_url(v: Any) -> pydantic.HttpUrl | None:
 
 
 def to_safe_path_list(v: Any) -> list[safe.RelPath]:
+    _check_list_size(v)
     if isinstance(v, list):
         result = []
         for item in v:
@@ -518,6 +522,7 @@ def to_safe_path_list(v: Any) -> list[safe.RelPath]:
 
 
 def to_str_list(v: Any) -> list[str]:
+    _check_list_size(v)
     if isinstance(v, list):
         return [str(item) for item in v if item != ""]
     if isinstance(v, str):
@@ -541,13 +546,21 @@ def to_standard_uri_list(v: Any) -> list[str]:
     return items
 
 
+def _check_list_size(v: Any) -> None:
+    if isinstance(v, list) and (len(v) > MAX_LIST_ITEMS):
+        raise ValueError(f"Expected at most {MAX_LIST_ITEMS} items, got {len(v)}")
+
+
 def _to_uri_items(v: Any) -> list[str]:
+    _check_list_size(v)
     if v is None or v == "":
         return []
     if isinstance(v, list):
         return [str(item) for item in v if item not in (None, "")]
     if isinstance(v, str):
-        return [line.strip() for line in v.split("\n") if line.strip()]
+        items = [line.strip() for line in v.split("\n") if line.strip()]
+        _check_list_size(items)
+        return items
     raise ValueError(f"Expected a string or list of URIs, got {type(v).__name__}")
 
 
