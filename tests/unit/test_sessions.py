@@ -182,6 +182,18 @@ async def test_destroy_does_not_allow_reactivation(store):
     assert await store.validate(hsid) is None
 
 
+async def test_destroy_logs_logout(store, monkeypatch):
+    events: list[tuple[str, str | None]] = []
+    monkeypatch.setattr("atr.log.auth_event", lambda event, asfuid=None: events.append((event, asfuid)))
+    hsid = _hsid()
+    await store.create(hsid, _session_data())
+
+    await store.destroy(hsid)
+    await store.destroy(hsid)
+
+    assert events == [("logout", "alice")]
+
+
 async def test_destroy_nonexistent_hsid(store):
     await store.destroy("nonexistent-hash")
 

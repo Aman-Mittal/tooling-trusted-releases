@@ -202,6 +202,7 @@ class Store:
             if user_session is not None:
                 await data.delete(user_session)
                 await data.commit()
+                log.auth_event("logout", user_session.uid)
 
     async def register(self, hsid: str, user_session: sql.UserSession) -> None:
         now = time.time()
