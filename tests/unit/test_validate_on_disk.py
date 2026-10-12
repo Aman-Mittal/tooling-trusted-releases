@@ -55,6 +55,39 @@ def release(phase: sql.ReleasePhase) -> mock.MagicMock:
     return result
 
 
+@pytest.mark.parametrize(
+    ("status", "minutes", "flagged"),
+    [
+        (sql.QuarantineStatus.STAGING, 6, True),
+        (sql.QuarantineStatus.STAGING, 4, False),
+        (sql.QuarantineStatus.PENDING, 6, False),
+        (sql.QuarantineStatus.FAILED, 6, False),
+        (sql.QuarantineStatus.ACKNOWLEDGED, 6, False),
+    ],
+)
+async def test_quarantine_staging_flags_old_staging_rows(
+    sqlite_sessionmaker, status: sql.QuarantineStatus, minutes: int, flagged: bool
+) -> None:
+    created = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=minutes)
+    async with sqlite_sessionmaker() as data:
+        data.add(
+            sql.Quarantined(
+                id=7, release_key="proj-1.0", asf_uid="user", status=status, token="secret", created=created
+            )
+        )
+        await data.commit()
+
+        divergences = [d async for d in validate.everything(data) if d.validator == "quarantine_staging"]
+
+    expected = validate.AnnotatedDivergence(
+        ["Quarantined.status"],
+        "quarantine_staging",
+        "proj-1.0 quarantine 7",
+        validate.Divergence("STAGING for at most 5 minutes", f"STAGING since {created.isoformat()}"),
+    )
+    assert divergences == ([expected] if flagged else [])
+
+
 @pytest.mark.parametrize("embargoed", [False, True])
 @pytest.mark.parametrize(
     ("phase", "expected_divergences"),

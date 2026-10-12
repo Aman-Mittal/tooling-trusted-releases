@@ -64,6 +64,8 @@ T = TypeVar("T")
 # Same ASF UID character set as principal.py
 _ASF_UID_PATTERN: Final = re.compile(r"^[-_a-z0-9]+$")
 
+_QUARANTINE_STAGING_MINUTES: Final = 5
+
 if True:
 
     def committee_components(
@@ -282,6 +284,9 @@ async def everything(data: db.Session) -> AsyncAnnotatedDivergences:
     for r in await asyncio.to_thread(releases, releases_sorted, finalising_releases):
         yield r
 
+    async for q in quarantine_staging(data):
+        yield q
+
 
 def project(p: sql.Project) -> AnnotatedDivergences:
     """Check that a project is valid."""
@@ -426,6 +431,22 @@ def projects(ps: Iterable[sql.Project]) -> AnnotatedDivergences:
     """Validate multiple projects."""
     for p in ps:
         yield from project(p)
+
+
+async def quarantine_staging(data: db.Session) -> AsyncAnnotatedDivergences:
+    via = sql.validate_instrumented_attribute
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=_QUARANTINE_STAGING_MINUTES)
+    query = data.quarantined(status=sql.QuarantineStatus.STAGING).where(via(sql.Quarantined.created) < cutoff)
+    for q in await query.order_by(sql.Quarantined.id).all():
+        yield AnnotatedDivergence(
+            ["Quarantined.status"],
+            "quarantine_staging",
+            f"{q.release_key} quarantine {q.id}",
+            Divergence(
+                f"STAGING for at most {_QUARANTINE_STAGING_MINUTES} minutes",
+                f"STAGING since {q.created.isoformat()}",
+            ),
+        )
 
 
 def release(r: sql.Release, finalising: bool = False) -> AnnotatedDivergences:
