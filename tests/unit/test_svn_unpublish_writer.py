@@ -86,7 +86,8 @@ async def test_unpublish_takes_an_owned_directory_whole(sqlite_sessionmaker, mon
     # The directory holds nothing but this release's files, so it comes out in one
     # action - its files and the emptied directory together - not file by file.
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", INTERNAL_PUBLISH_URL, raising=False)
-    monkeypatch.setattr(release_writer.svn, "list_files", mock.AsyncMock(return_value=ALL_FILES))
+    monkeypatch.setattr(release_writer.attestable, "latest_revision_number", mock.AsyncMock(return_value=None))
+    monkeypatch.setattr(release_writer.svn, "list_files", mock.AsyncMock(return_value=[*ALL_FILES, f"{ARTIFACT}.mds"]))
     # svnmucc reports the commit in its own format, not svn's "Committed revision N."
     remove_files = mock.AsyncMock(return_value="r7 committed by alice at 2026-09-02T14:23:07Z")
     monkeypatch.setattr(release_writer.svn, "remove_files", remove_files)

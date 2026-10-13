@@ -1963,6 +1963,7 @@ class FoundationAdmin(FoundationCommitter):
             for name in (artifact.artifact_path, artifact.signature_path, artifact.checksum_path, artifact.sbom_path):
                 if name:
                     wanted.setdefault(directory, set()).add(name)
+            wanted[directory].update(f"{artifact.artifact_path}.{suffix}" for suffix in analysis.METADATA_SUFFIXES)
         return list(wanted.items()), False, False
 
     async def __dist_base_revision(self, root_url: str) -> int | None:
