@@ -16,6 +16,7 @@
 # under the License.
 
 import pathlib
+import ssl
 import unittest.mock as mock
 from typing import TYPE_CHECKING
 
@@ -485,6 +486,19 @@ def test_search_sets_failed_on_exception(monkeypatch: "MonkeyPatch"):
     ldap.search(params)
     assert params.failed is True
     assert params.err_msg is not None
+
+
+def test_tls_config_restricts_ciphers():
+    with mock.patch.object(ssl.SSLContext, "wrap_socket", autospec=True) as wrap_socket:
+        ldap._tls_config.wrap_socket(mock.Mock())
+
+    context = wrap_socket.call_args.args[0]
+    ciphers = context.get_ciphers()
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.verify_flags & ssl.VERIFY_X509_STRICT
+    assert {cipher["protocol"] for cipher in ciphers} == {"TLSv1.2", "TLSv1.3"}
+    assert all(cipher["aead"] for cipher in ciphers)
+    assert all(cipher["kea"] in {"kx-any", "kx-ecdhe"} for cipher in ciphers)
 
 
 def _make_pubsub_payload(

@@ -89,6 +89,7 @@ class Result(schema.Strict):
 
 _tls_config = ldap3.Tls(
     validate=ssl.CERT_REQUIRED,
+    ciphers="ECDHE+AESGCM:ECDHE+CHACHA20",
 )
 
 
