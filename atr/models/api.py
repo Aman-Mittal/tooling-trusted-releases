@@ -1046,6 +1046,13 @@ class VoteStartArgs(schema.Strict):
     automatic_publish_when_resolved: bool = schema.default_example(False, False)
     concerns_noted: list[str] = schema.default_example([], ["atr.tasks.checks.license.headers"])
 
+    @pydantic.field_validator("vote_duration")
+    @classmethod
+    def validate_vote_duration(cls, v: int | None) -> int | None:
+        if v is not None:
+            validation.validate_policy_min_hours(v)
+        return v
+
 
 class VoteStartResults(schema.Strict):
     endpoint: Literal["/vote/start"] = schema.alias("endpoint")

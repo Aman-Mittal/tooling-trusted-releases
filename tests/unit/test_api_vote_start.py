@@ -17,12 +17,24 @@
 
 from types import SimpleNamespace
 
+import pydantic
 import pytest
 
 import atr.api as api
 import atr.construct as construct
 import atr.models as models
 import atr.models.safe as safe
+
+
+@pytest.mark.parametrize("vote_duration", [None, 0, 72, 168])
+def test_vote_start_args_accepts_valid_vote_duration(vote_duration: int | None) -> None:
+    assert _args(vote_duration=vote_duration).vote_duration == vote_duration
+
+
+@pytest.mark.parametrize("vote_duration", [-(10**100), -1, 1, 71, 169, 10**100])
+def test_vote_start_args_rejects_invalid_vote_duration(vote_duration: int) -> None:
+    with pytest.raises(pydantic.ValidationError, match="between 72 and 168"):
+        _args(vote_duration=vote_duration)
 
 
 @pytest.mark.asyncio
@@ -67,11 +79,14 @@ async def test_vote_start_supplied_subject_and_body_pass_through(monkeypatch) ->
     assert calls == {}
 
 
-def _args(subject: str | None = None, body: str | None = None) -> models.api.VoteStartArgs:
+def _args(
+    subject: str | None = None, body: str | None = None, vote_duration: int | None = None
+) -> models.api.VoteStartArgs:
     return models.api.VoteStartArgs(
         project=safe.ProjectKey("example"),
         version=safe.VersionKey("1.0.0"),
         email_to="dev@example.apache.org",
+        vote_duration=vote_duration,
         subject=subject,
         body=body,
     )
