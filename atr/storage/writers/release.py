@@ -1039,6 +1039,8 @@ class CommitteeParticipant(FoundationCommitter):
                     raise storage.AccessError("No filename provided", status=400)
                 # Validate the filename from multipart upload and construct the new path
                 target_path = path / str(safe.RelPath(file.filename))
+                resolved = await asyncio.to_thread(target_path.path.resolve)
+                resolved.relative_to(await asyncio.to_thread(path.path.resolve))
                 await aiofiles.os.makedirs(target_path.parent, exist_ok=True)
                 await self.__save_file(file, target_path.path)
 
