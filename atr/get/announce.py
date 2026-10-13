@@ -101,7 +101,7 @@ async def selected(
         title=f"Announce {release.project.display_name} {release.version}",
         description=f"Announce {release.project.display_name} {release.version} as a release.",
         content=content,
-        javascripts=["announce-confirm"],
+        javascripts=["announce-confirm", "cc-bcc-exclusive"],
     )
 
 

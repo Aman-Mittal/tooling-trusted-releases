@@ -144,7 +144,7 @@ async def selected(
         return await template.blank(
             title=f"Start voting on {release.project.short_display_name} {release.version}",
             content=content,
-            javascripts=["vote-body-duration"],
+            javascripts=["vote-body-duration", "cc-bcc-exclusive"],
         )
 
 

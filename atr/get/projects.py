@@ -364,6 +364,8 @@ async def view(
     content = page.collect()
 
     javascripts = ["copy-variable", "template-url-toggle", "version-scheme-toggle"]
+    if can_edit_policy and (quart.request.args.get("tab") in {"vote", "finish"}):
+        javascripts.append("cc-bcc-exclusive")
     return await template.blank(
         title=f"{project.display_name}",
         description=f"Information regarding {project.display_name}.",
