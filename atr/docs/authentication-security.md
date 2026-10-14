@@ -17,6 +17,7 @@
 * [GitHub Actions OIDC (Trusted Publishing)](#github-actions-oidc-trusted-publishing)
 * [SSH authentication](#ssh-authentication)
 * [Token lifecycle](#token-lifecycle)
+* [Secret rotation](#secret-rotation)
 * [Adaptive response](#adaptive-response)
 * [Audit Logging](#audit-logging)
 * [Security properties](#security-properties)
@@ -405,6 +406,34 @@ expiration. For API users, the flow is: obtain a PAT once (via the web interface
 for JWTs as needed (JWTs expire quickly, so this exchange happens frequently in long-running
 scripts). For automated uploads, the flow extends further: a GitHub Actions workflow authenticates
 via OIDC, registers a temporary SSH key, and uses it to upload artifacts via rsync.
+
+## Secret rotation
+
+ATR generates three signing keys in `<STATE_DIR>/secrets/generated` when they are missing, and loads them into memory at startup:
+
+| Key | File | Purpose | Effect of replacement |
+| --- | --- | --- | --- |
+| JWT signing key | `jwt_secret_key.txt` | Signs API JWTs | Existing JWTs are rejected, and clients must obtain new ones |
+| Session signing key | `apptoken.txt` | Signs session cookies and CSRF tokens | Existing cookies and form tokens are rejected, and users sign in again. Session records in the database are not deleted |
+| SSH host key | `ssh_host_key` | Identifies the SSH server to clients | The host key fingerprint changes |
+
+Each key must be replaced at planned maintenance before two years have passed since it was generated or last rotated, and immediately if compromise of the key is suspected. Rotation is a manual operational task, and ATR does not track key ages or rotate these keys by itself. This policy applies to these three keys only.
+
+ASVS 5.0.0 requirements [13.1.4 and 13.3.4](https://github.com/OWASP/ASVS/blob/v5.0.0_release/5.0/en/0x22-V13-Configuration.md) ask for a documented rotation schedule for critical secrets, and for secrets to expire and be rotated according to it, but they do not set an interval or require automatic rotation. The two year maximum follows the upper limit that §5.3.6 of [NIST SP 800-57 Part 1 Rev. 5](https://doi.org/10.6028/NIST.SP.800-57pt1r5) suggests for symmetric and private authentication keys.
+
+The operator responsible for the deployment keeps an operational record of the date each key was generated or last rotated, and its expiry date, by which it must next be replaced. The operator shares that record only with authorized verifiers; it is not published. Verification does not require access to the keys themselves.
+
+To replace all three keys in one maintenance window:
+
+1. Stop ATR.
+2. Remove `jwt_secret_key.txt`, `apptoken.txt`, and `ssh_host_key` from `<STATE_DIR>/secrets/generated`, leaving the rest of the state directory unchanged.
+3. Start ATR, which generates each missing key, with mode `0400` for the JWT signing key and SSH host key and mode `0600` for `apptoken.txt`.
+4. Publish the new SSH host key fingerprint over an authenticated channel, such as the HTTPS site banner in *Admin → System → Site banner*, so that clients that pin the host key can update it. Clients should not disable host key checking.
+5. Update the operational record with the new dates.
+
+The JWT signing key can also be replaced without a restart from the *Rotate JWT key* tab in *Admin → Users*. This writes a new key file, puts it into use immediately so that every existing JWT is rejected, and records the rotation in the audit log. The operational record is then updated in the same way.
+
+Editing or removing the key files while ATR is running does not rotate them, because ATR keeps using the keys that it holds in memory.
 
 ## Adaptive response
 
