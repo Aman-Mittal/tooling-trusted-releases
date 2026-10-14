@@ -248,7 +248,17 @@ async def selected(  # noqa: C901
     submit_classes = "btn-primary"
     submit_label = strings.RESOLVE_VOTE_BUTTON
     duration_blocks_result = (not pass_fail_allowed) and (not bypass_active)
-    if duration_blocks_result:
+    early_completion = (
+        duration_blocks_result
+        and binding_sufficient
+        and (vote_end is not None)
+        and (release.committee is not None)
+        and (await user.is_binding_for_release(release.committee, asf_uid, vote_round))[0]
+    )
+    if early_completion:
+        form_cls = shared.resolve.SubmitForm
+        defaults["vote_result"] = [("Passed", "Passed"), ("Cancelled", "Cancelled")]
+    elif duration_blocks_result:
         cancel_only = True
         defaults["email_body"] = email_body.replace("{{OUTCOME}}", "was cancelled")
         defaults["vote_result"] = "Cancelled"
@@ -337,6 +347,8 @@ async def selected(  # noqa: C901
             ],
         ]
     skip.append("email_bcc")
+    if not early_completion:
+        skip.append("early_reason")
 
     if form_cls is shared.resolve.SubmitForm:
         defaults["result_subject"] = tabulate.vote_result_subject(release, "{{OUTCOME}}")
@@ -392,6 +404,7 @@ async def selected(  # noqa: C901
         vote_task_error=vote_task_error,
         archive_url=archive_url,
         cancel_only=cancel_only,
+        early_completion=early_completion,
         email_context_summary=email_context_summary,
         email_context_votes=email_context_votes,
         trusted_ballots=trusted_ballot_rows,

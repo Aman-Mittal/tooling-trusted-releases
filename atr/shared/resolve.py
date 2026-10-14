@@ -19,6 +19,7 @@ from typing import Annotated, Literal, Self
 
 import pydantic
 
+import atr.constants as constants
 import atr.form as form
 import atr.models.sql as sql
 import atr.util as util
@@ -70,6 +71,13 @@ class SubmitForm(ResolveFormBase):
     )
     vote_result: Literal["Passed", "Failed", "Cancelled"] = form.label(
         "Vote result", widget=form.Widget.RADIO, required=True
+    )
+    early_reason: str = form.label(
+        "Reason for early completion",
+        "Required to mark the vote as passed before its voting period ends. ATR adds it to the result email.",
+        widget=form.Widget.TEXT,
+        default="",
+        max_length=constants.EARLY_VOTE_REASON_MAX_LENGTH,
     )
     automatic_resolve_when_finished: form.Bool = form.label(
         "Automatically resolve the second round vote",

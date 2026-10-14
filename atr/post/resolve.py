@@ -69,6 +69,7 @@ async def selected(
                 notify_when_finished=notify_when_finished,
                 additional_cc=submit_form.email_cc,
                 additional_bcc=submit_form.email_bcc,
+                early_reason=submit_form.early_reason if isinstance(submit_form, shared.resolve.SubmitForm) else "",
             )
     except storage.AccessError as e:
         return await session.redirect(

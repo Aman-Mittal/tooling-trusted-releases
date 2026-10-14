@@ -1021,6 +1021,7 @@ class VoteResolveArgs(schema.Strict):
     project: safe.ProjectKey = schema.example("example")
     version: safe.VersionKey = schema.example("0.0.1")
     resolution: Literal["passed", "failed", "cancelled"] = schema.example("passed")
+    early_reason: str = schema.default_example("", "Fix for a publicly known security issue")
 
 
 class VoteResolveResults(schema.Strict):

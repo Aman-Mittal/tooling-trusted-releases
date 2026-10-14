@@ -2115,6 +2115,7 @@ async def vote_resolve(
                 data.resolution,
                 asf_uid,
                 f"The vote {data.resolution}.",
+                early_reason=data.early_reason,
             )
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e

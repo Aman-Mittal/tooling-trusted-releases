@@ -597,6 +597,24 @@ async def test_release_current_vote_task_matches_serial_and_legacy_fallback(sqli
 
 
 @pytest.mark.asyncio
+async def test_resolve_transition_rejects_restarted_vote(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        await _seed_release(data, phase=sql.ReleasePhase.RELEASE_CANDIDATE, current_vote_seq=2)
+        writer = _member_writer_with_data(data, SimpleNamespace())
+
+        with pytest.raises(storage.AccessError, match="release state has changed"):
+            await writer._resolve_transition(
+                SimpleNamespace(key="project-1.0.0", current_vote_seq=1),
+                expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                expected_podling_thread_id=None,
+                new_phase=sql.ReleasePhase.RELEASE_PREVIEW,
+                new_vote_mode=sql.VoteMode.EMAIL,
+                new_vote_resolved=datetime.datetime.now(datetime.UTC),
+                new_podling_thread_id=None,
+            )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("vote_mode", [sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED])
 @pytest.mark.parametrize(
     ("vote_round", "is_member", "is_ipmc_member", "body"),

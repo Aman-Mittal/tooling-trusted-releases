@@ -122,6 +122,23 @@ async def test_cancel_form_overrides_tabulated_result_before_end(
     assert defaults["vote_result"] == "Cancelled"
 
 
+@pytest.mark.asyncio
+async def test_early_completion_form_has_no_preselected_result(render_app: quart.Quart) -> None:
+    async with render_app.test_request_context("/resolve/project/1.0.0"):
+        rendered = await form.render(
+            model_cls=shared.resolve.SubmitForm,
+            defaults={"vote_result": [("Passed", "Passed"), ("Cancelled", "Cancelled")]},
+            use_error_data=False,
+        )
+
+    html = str(rendered)
+    assert 'value="Passed"' in html
+    assert 'value="Cancelled"' in html
+    assert 'value="Failed"' not in html
+    assert "checked" not in html
+    assert 'name="early_reason"' in html
+
+
 @pytest.mark.parametrize("vote_mode", [sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED])
 @pytest.mark.asyncio
 async def test_resolve_page_defers_selectable_outcome_to_post(
@@ -247,6 +264,31 @@ async def test_email_resolve_page_does_not_query_ballot_receipts(monkeypatch: py
     ballot_receipt_message_ids.assert_not_awaited()
     vote_details.assert_awaited_once()
     assert vote_details.await_args.kwargs["excluded_message_ids"] is None
+
+
+@pytest.mark.parametrize(
+    ("archive_url", "tally", "expected"),
+    [
+        (None, [SimpleNamespace(passed=True)], False),
+        ("https://lists.apache.org/thread/abc", [SimpleNamespace(passed=True)], True),
+        ("https://lists.apache.org/thread/abc", [SimpleNamespace(passed=False)], False),
+        ("https://lists.apache.org/thread/abc", ValueError("Invalid thread"), False),
+        ("https://lists.apache.org/thread/abc", resolve.util.FetchError("Unavailable", url="https://x"), False),
+    ],
+)
+@pytest.mark.asyncio
+async def test_email_vote_passes_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, archive_url: str | None, tally: object, expected: bool
+) -> None:
+    write_as = _mock_write_as()
+    write_as.cache.get_message_archive_url = mock.AsyncMock(return_value=archive_url)
+    writer = _writer_with_mocks(_mock_data(), write_as)
+    monkeypatch.setattr(vote.tabulate, "vote_committee", mock.AsyncMock(return_value=None))
+    monkeypatch.setattr(vote.tabulate, "vote_details", mock.AsyncMock(side_effect=tally))
+
+    passes = await writer._ReleaseManager__email_vote_passes(_candidate_release(), _latest_vote_task())
+
+    assert passes is expected
 
 
 @pytest.mark.asyncio
@@ -766,6 +808,31 @@ async def test_resolve_allows_passed_after_vote_end(monkeypatch: pytest.MonkeyPa
     assert success == "Vote marked as passed"
 
 
+@pytest.mark.parametrize(("podling_thread_id", "voting_round"), [(None, None), ("round-one-thread", 2)])
+@pytest.mark.asyncio
+async def test_resolve_completes_passing_email_vote_early(
+    monkeypatch: pytest.MonkeyPatch, podling_thread_id: str | None, voting_round: int | None
+) -> None:
+    writer, release, resolve_release = _early_email_writer(monkeypatch, is_binding=True, passed=True)
+    release.committee.is_podling = podling_thread_id is not None
+    release.podling_thread_id = podling_thread_id
+    is_binding_for_release = mock.AsyncMock(return_value=(True, "Incubator"))
+    monkeypatch.setattr(vote.user, "is_binding_for_release", is_binding_for_release)
+
+    await writer.resolve(
+        _project_key(),
+        _version_key(),
+        "passed",
+        "Chair",
+        "The vote has passed.",
+        early_reason="  Security fix  ",
+    )
+
+    assert is_binding_for_release.await_args.args[1:3] == ("chair", voting_round)
+    assert resolve_release.await_args.args[2] == voting_round
+    assert resolve_release.await_args.kwargs["early_reason"] == "Security fix"
+
+
 @pytest.mark.asyncio
 async def test_resolve_page_allows_manual_continuation_when_archive_lookup_fails(
     monkeypatch: pytest.MonkeyPatch,
@@ -918,6 +985,76 @@ async def test_resolve_page_allows_early_result_when_bypass_is_active(
     assert form_render.call_args.kwargs["submit_label"] == "Resolve vote"
 
 
+@pytest.mark.parametrize(
+    ("vote_end", "model_cls", "vote_result"),
+    [
+        (
+            datetime.datetime(2026, 4, 1, 12, 0, 0, tzinfo=datetime.UTC),
+            shared.resolve.SubmitForm,
+            [("Passed", "Passed"), ("Cancelled", "Cancelled")],
+        ),
+        (None, shared.resolve.CancelSubmitForm, "Cancelled"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_resolve_page_offers_early_completion_only_with_known_end(
+    monkeypatch: pytest.MonkeyPatch,
+    vote_end: datetime.datetime | None,
+    model_cls: type[form.Form],
+    vote_result: object,
+) -> None:
+    monkeypatch.setattr(resolve.tabulate, "binding_vote_passes", lambda _yes, _no: True)
+
+    context, form_render, _archive_lookup, _vote_committee, _vote_details = await _render_standard_resolve_page(
+        monkeypatch,
+        pass_fail_allowed=False,
+        vote_end=vote_end,
+    )
+
+    assert context["early_completion"] is (vote_end is not None)
+    assert form_render.call_args.kwargs["model_cls"] is model_cls
+    assert form_render.call_args.kwargs["defaults"]["vote_result"] == vote_result
+    assert ("early_reason" in form_render.call_args.kwargs["skip"]) is (vote_end is None)
+
+
+@pytest.mark.parametrize(
+    ("early_reason", "is_binding", "passed", "vote_end_known", "message", "status"),
+    [
+        ("   ", True, True, True, "A reason is required", 409),
+        ("x" * 1001, True, True, True, "at most 1000 characters", 400),
+        ("Security fix", False, True, True, "Only binding voters", 403),
+        ("Security fix", True, False, True, "could not confirm", 409),
+        ("Security fix", True, True, False, "unless it is cancelled", 409),
+    ],
+)
+@pytest.mark.asyncio
+async def test_resolve_rejects_early_email_completion(
+    monkeypatch: pytest.MonkeyPatch,
+    early_reason: str,
+    is_binding: bool,
+    passed: bool,
+    vote_end_known: bool,
+    message: str,
+    status: int,
+) -> None:
+    writer, _release, resolve_release = _early_email_writer(monkeypatch, is_binding=is_binding, passed=passed)
+    if not vote_end_known:
+        monkeypatch.setattr(interaction, "vote_end_get", lambda _task: None)
+
+    with pytest.raises(storage.AccessError, match=message) as exc_info:
+        await writer.resolve(
+            _project_key(),
+            _version_key(),
+            "passed",
+            "Chair",
+            "The vote has passed.",
+            early_reason=early_reason,
+        )
+
+    assert exc_info.value.status == status
+    resolve_release.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 async def test_resolve_rejects_early_failed(monkeypatch: pytest.MonkeyPatch) -> None:
     """Writer rejects Failed when the end of the vote has not been reached and no bypass is active."""
@@ -997,6 +1134,26 @@ async def test_resolve_rejects_stale_email_vote_serial(monkeypatch: pytest.Monke
             expected_vote_seq=1,
             expected_vote_mode=sql.VoteMode.EMAIL,
         )
+
+
+@pytest.mark.asyncio
+async def test_send_resolution_appends_early_reason() -> None:
+    data = _mock_data()
+    writer = _writer_with_data(data)
+
+    await writer._ReleaseManager__send_resolution(
+        _candidate_release(),
+        "passed",
+        "The vote passed.\n",
+        _latest_vote_task(),
+        early_reason="Security fix",
+    )
+
+    queued_task = data.add_all.call_args.args[0][0]
+    assert queued_task.task_args["body"] == (
+        "The vote passed.\n\nThis vote was completed before the end of its voting period,"
+        " for the following reason:\n\nSecurity fix\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -1194,6 +1351,50 @@ async def test_trusted_resolve_allows_insufficient_votes_with_bypass(monkeypatch
 
     assert success == "Vote marked as passed"
     write_as.revision.create_revision_with_quarantine.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_trusted_resolve_completes_passing_vote_early(monkeypatch: pytest.MonkeyPatch) -> None:
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = _writer_with_mocks(data, write_as)
+    send_resolution = mock.AsyncMock(return_value=None)
+    writer._ReleaseManager__send_resolution = send_resolution
+
+    release = _candidate_release()
+    release.vote_mode = sql.VoteMode.TRUSTED
+    release.effective_vote_mode = sql.VoteMode.TRUSTED
+    release.current_vote_seq = 1
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=release)
+    data.release = mock.MagicMock(return_value=query)
+
+    monkeypatch.setattr(
+        interaction, "release_current_vote_task", mock.AsyncMock(return_value=_latest_vote_task_with_end(24))
+    )
+    monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release, _asf_uid: False)
+    monkeypatch.setattr(interaction, "ballots_for_resolution", mock.AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        interaction,
+        "trusted_ballot_summary",
+        mock.AsyncMock(return_value=interaction.TrustedVoteSummary(binding_votes_yes=3)),
+    )
+    monkeypatch.setattr(vote.user, "is_binding_for_release", mock.AsyncMock(return_value=(True, "Project")))
+
+    _release, _round, success, _error = await writer.resolve(
+        _project_key(),
+        _version_key(),
+        "passed",
+        "Chair",
+        "The vote has passed.",
+        expected_vote_seq=1,
+        expected_vote_mode=sql.VoteMode.TRUSTED,
+        early_reason="Security fix",
+    )
+
+    assert success == "Vote marked as passed"
+    assert send_resolution.await_args.kwargs["early_reason"] == "Security fix"
+    assert write_as.append_to_audit_log.call_args.kwargs["early_reason"] == "Security fix"
 
 
 @pytest.mark.asyncio
@@ -1624,6 +1825,32 @@ def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
     )
 
 
+def _early_email_writer(
+    monkeypatch: pytest.MonkeyPatch, *, is_binding: bool, passed: bool
+) -> tuple[vote.CommitteeMember, SimpleNamespace, mock.AsyncMock]:
+    data = _mock_data()
+    write_as = _mock_write_as()
+    write_as.cache.get_message_archive_url = mock.AsyncMock(return_value="https://lists.apache.org/thread/abc")
+    writer = _writer_with_mocks(data, write_as)
+
+    release = _candidate_release()
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=release)
+    data.release = mock.MagicMock(return_value=query)
+
+    monkeypatch.setattr(
+        interaction, "release_current_vote_task", mock.AsyncMock(return_value=_latest_vote_task_with_end(24))
+    )
+    monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release, _asf_uid: False)
+    monkeypatch.setattr(vote.user, "is_binding_for_release", mock.AsyncMock(return_value=(is_binding, "Project")))
+    monkeypatch.setattr(vote.tabulate, "vote_committee", mock.AsyncMock(return_value=release.committee))
+    monkeypatch.setattr(vote.tabulate, "vote_details", mock.AsyncMock(return_value=SimpleNamespace(passed=passed)))
+
+    resolve_release = mock.AsyncMock(return_value=(release, None, "Vote marked as passed", None))
+    writer._ReleaseManager__resolve_release = resolve_release
+    return writer, release, resolve_release
+
+
 def _empty_vote_summary() -> dict[str, int]:
     return {
         "binding_votes": 0,
@@ -1692,6 +1919,7 @@ def _manual_candidate_release(podling_thread_id: str | None = None) -> SimpleNam
         release_policy=SimpleNamespace(vote_mode=sql.VoteMode.MANUAL),
         vote_started=datetime.datetime.now(datetime.UTC),
         vote_resolved=datetime.datetime.now(datetime.UTC),
+        current_vote_seq=None,
         podling_thread_id=podling_thread_id,
         version="1.0.0",
         safe_version_key="1.0.0",

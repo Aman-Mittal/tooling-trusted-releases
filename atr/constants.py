@@ -241,6 +241,8 @@ APACHE_LICENSE_2_0: Final[str] = """\
    limitations under the License.
 """
 
+EARLY_VOTE_REASON_MAX_LENGTH: Final[int] = 1000
+
 GENERATED_FILE_SUFFIXES: Final[tuple[str, ...]] = (
     ".bundle.js",
     ".chunk.js",

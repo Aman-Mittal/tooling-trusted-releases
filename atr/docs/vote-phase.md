@@ -50,3 +50,5 @@ vote returns it to compose so that it can be revised. When starting the vote, th
 can also ask ATR to publish the release automatically once the vote resolves successfully, as
 described in [Promoting to release](promoting-to-release). See
 [Staging and voting](staging-and-voting) for how staging, vote emails, and resolution work in ATR.
+
+If a vote is already passing before its voting period ends, a binding voter can complete it early as passed by giving a reason, which ATR adds to the result email. Release votes should normally remain open for at least 72 hours, so do this only in [exceptional circumstances](https://www.apache.org/legal/release-policy.html#expedited-releases).

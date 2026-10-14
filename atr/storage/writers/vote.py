@@ -25,6 +25,7 @@ import sqlalchemy
 import sqlmodel
 
 import atr.config as config
+import atr.constants as constants
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
@@ -518,6 +519,7 @@ class ReleaseManager(CommitteeParticipant):
         notify_when_finished: bool = False,
         additional_cc: list[str] | None = None,
         additional_bcc: list[str] | None = None,
+        early_reason: str = "",
     ) -> tuple[sql.Release, int | None, str, str | None]:
         release = await self.__data.release(
             project_key=str(project_key),
@@ -581,6 +583,7 @@ class ReleaseManager(CommitteeParticipant):
                 notify_when_finished=notify_when_finished,
                 additional_cc=additional_cc,
                 additional_bcc=additional_bcc,
+                early_reason=early_reason,
             )
         if (
             (expected_vote_seq is not None)
@@ -589,30 +592,31 @@ class ReleaseManager(CommitteeParticipant):
         ):
             raise storage.AccessError("The resolve form is stale, please refresh and try again", status=409)
 
-        is_podling = False
-        if release.project.committee is not None:
-            is_podling = release.project.committee.is_podling
-        podling_thread_id = release.podling_thread_id
-
         latest_vote_task = await interaction.release_current_vote_task(release)
         if latest_vote_task is None:
             raise storage.AccessError("No vote task found, unable to send resolution message.", status=404)
+        if release.committee is None:
+            raise storage.AccessError("Project has no committee - Invalid state", status=500)
+        voting_round = interaction.trusted_vote_round(release)
 
+        completed_early_reason = None
         if (
             (vote_result != "cancelled")
             and (not interaction.vote_pass_fail_allowed(latest_vote_task))
             and (not interaction.vote_resolution_bypass(release, self.__asf_uid))
         ):
-            raise storage.AccessError(
-                "The vote cannot be resolved before the voting period has ended unless it is cancelled.",
-                status=409,
+            completed_early_reason = await self.__early_completion_reason(
+                release.committee,
+                voting_round,
+                vote_result,
+                interaction.vote_end_get(latest_vote_task),
+                early_reason,
             )
-
-        voting_round = None
-        if is_podling is True:
-            voting_round = 1 if (podling_thread_id is None) else 2
-        if release.committee is None:
-            raise storage.AccessError("Project has no committee - Invalid state", status=500)
+            if not await self.__email_vote_passes(release, latest_vote_task):
+                raise storage.AccessError(
+                    "ATR could not confirm that this vote is passing, so it cannot be completed early",
+                    status=409,
+                )
 
         return await self.__resolve_release(
             project_key,
@@ -627,6 +631,7 @@ class ReleaseManager(CommitteeParticipant):
             notify_when_finished=notify_when_finished,
             additional_cc=additional_cc,
             additional_bcc=additional_bcc,
+            early_reason=completed_early_reason,
         )
 
     async def resolve_manually(
@@ -710,6 +715,7 @@ class ReleaseManager(CommitteeParticipant):
         notify_when_finished: bool = False,
         additional_cc: list[str] | None = None,
         additional_bcc: list[str] | None = None,
+        early_reason: str | None = None,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         if (voting_round == 1) and (vote_result == "passed"):
             await self.__data.commit()
@@ -864,6 +870,7 @@ class ReleaseManager(CommitteeParticipant):
             extra_destination=extra_destination,
             additional_cc=additional_cc,
             additional_bcc=additional_bcc,
+            early_reason=early_reason,
         )
         if publish_enqueue_error is not None:
             if error_message is None:
@@ -883,6 +890,7 @@ class ReleaseManager(CommitteeParticipant):
                 vote_result=vote_result,
                 voting_round=voting_round,
                 second_round_vote_seq=second_round_vote_seq,
+                early_reason=early_reason,
             )
         else:
             self.__write_as.append_to_audit_log(
@@ -891,6 +899,7 @@ class ReleaseManager(CommitteeParticipant):
                 version_key=release.version,
                 vote_result=vote_result,
                 voting_round=voting_round,
+                early_reason=early_reason,
             )
         return release, voting_round, success_message, error_message
 
@@ -932,11 +941,17 @@ class ReleaseManager(CommitteeParticipant):
         extra_destination: tuple[str, str] | None = None,
         additional_cc: list[str] | None = None,
         additional_bcc: list[str] | None = None,
+        early_reason: str | None = None,
     ) -> str | None:
         storage.ensure_project_active(release.project)
         vote_thread_mid = interaction.task_mid_get(latest_vote_task)
         if vote_thread_mid is None:
             return "No vote thread found, unable to send resolution message."
+        if early_reason is not None:
+            body = (
+                f"{body.rstrip()}\n\nThis vote was completed before the end of its voting period,"
+                f" for the following reason:\n\n{early_reason}\n"
+            )
 
         # Reply into the original vote thread, reusing the recipients it went to
         # and merging in the resolver's additions (deduped case-insensitively).
@@ -992,7 +1007,9 @@ class ReleaseManager(CommitteeParticipant):
         notify_when_finished: bool = False,
         additional_cc: list[str] | None = None,
         additional_bcc: list[str] | None = None,
+        early_reason: str = "",
     ) -> tuple[sql.Release, int | None, str, str | None]:
+        completed_early_reason: str | None = None
         latest_vote_task: sql.Task | None = None
         second_round_vote_mode: sql.VoteMode | None = None
         second_round_vote_seq: int | None = None
@@ -1031,9 +1048,8 @@ class ReleaseManager(CommitteeParticipant):
                 and (not interaction.vote_pass_fail_allowed(latest_vote_task))
                 and (not resolution_bypass)
             ):
-                raise storage.AccessError(
-                    "The vote cannot be resolved before the voting period has ended unless it is cancelled.",
-                    status=409,
+                completed_early_reason = await self.__early_completion_reason(
+                    release.committee, voting_round, vote_result, vote_end, early_reason
                 )
 
             ballots = await interaction.effective_trusted_ballots(release, vote_seq, self.__data)
@@ -1188,6 +1204,7 @@ class ReleaseManager(CommitteeParticipant):
                 extra_destination=extra_destination,
                 additional_cc=additional_cc,
                 additional_bcc=additional_bcc,
+                early_reason=completed_early_reason,
             )
         if publish_enqueue_error is not None:
             if error_message is None:
@@ -1213,6 +1230,7 @@ class ReleaseManager(CommitteeParticipant):
             trusted_non_binding_abstain=summary.non_binding_votes_abstain,
             second_round_vote_seq=second_round_vote_seq,
             second_round_vote_mode=second_round_vote_mode.value if (second_round_vote_mode is not None) else None,
+            early_reason=completed_early_reason,
         )
         return release, voting_round, success_message, error_message
 
@@ -1241,6 +1259,7 @@ class ReleaseManager(CommitteeParticipant):
         stmt = sqlmodel.update(sql.Release).where(
             via(sql.Release.key) == release.key,
             via(sql.Release.phase) == expected_phase,
+            via(sql.Release.current_vote_seq).is_not_distinct_from(release.current_vote_seq),
         )
         if expected_podling_thread_id is None:
             stmt = stmt.where(via(sql.Release.podling_thread_id).is_(None))
@@ -1310,6 +1329,48 @@ class ReleaseManager(CommitteeParticipant):
             )
         )
         await self.__data.execute(auto_resolve_stmt)
+
+    async def __early_completion_reason(
+        self,
+        committee: sql.Committee,
+        voting_round: int | None,
+        vote_result: Literal["passed", "failed", "cancelled"],
+        vote_end: datetime.datetime | None,
+        early_reason: str,
+    ) -> str:
+        reason = early_reason.strip()
+        if (vote_result != "passed") or (vote_end is None):
+            raise storage.AccessError(
+                "The vote cannot be resolved before the voting period has ended unless it is cancelled.",
+                status=409,
+            )
+        if not reason:
+            raise storage.AccessError(
+                "A reason is required to complete a vote before the voting period has ended", status=409
+            )
+        if len(reason) > constants.EARLY_VOTE_REASON_MAX_LENGTH:
+            raise storage.AccessError(
+                f"The early completion reason must be at most {constants.EARLY_VOTE_REASON_MAX_LENGTH} characters",
+                status=400,
+            )
+        is_binding, _binding_committee = await user.is_binding_for_release(
+            committee, self.__asf_uid, voting_round, caller_data=self.__data
+        )
+        if not is_binding:
+            raise storage.AccessError("Only binding voters can complete this vote early", status=403)
+        return reason
+
+    async def __email_vote_passes(self, release: sql.Release, vote_task: sql.Task) -> bool:
+        archive_url = await self.__resolved_vote_thread_url(vote_task)
+        if archive_url is None:
+            return False
+        thread_id = archive_url.split("/")[-1]
+        try:
+            committee = await tabulate.vote_committee(thread_id, release)
+            details = await tabulate.vote_details(committee, thread_id, release)
+        except (util.FetchError, ValueError):
+            return False
+        return details.passed
 
     async def __enqueue_automatic_svn_publish(
         self,
