@@ -139,11 +139,11 @@ Automatic publication starts when you resolve the vote. The finish page shows it
 If your project ships packages to Maven Central, PyPI, or a similar platform, publish them there as usual. If your project requires recorded distributions, ATR will not announce the release until you record them. For a Maven Central package:
 
 ```shell
-atr distribution record example 1.0.0 MAVEN org.apache.example example-core 1.0.0 false false
+atr distribution record example 1.0.0 MAVEN org.apache.example example-core 1.0.0
 atr distribution list example 1.0.0
 ```
 
-The first `false` records a final distribution rather than a staged one. The second is a required `details` argument that currently has no effect. ATR checks that the package is available on the platform. [Recording distributions](release-manager-setup#recording-distributions) lists the other platform names.
+This records a final distribution rather than a staged one. ATR checks that the package is available on the platform. [Recording distributions](release-manager-setup#recording-distributions) lists the other platform names.
 
 When publication is complete, announce to a mailing list permitted for your project:
 
