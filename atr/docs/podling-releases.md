@@ -4,7 +4,7 @@
 
 **Prev**: `5.4.` [Archiving and lifecycle](archiving-and-lifecycle)
 
-**Next**: `6.` [Release catalog](release-catalog)
+**Next**: `5.6.` [Making a release with the client](client-guide)
 
 **Sections**:
 

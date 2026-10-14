@@ -27,6 +27,7 @@ NOTE: This documentation is a work in progress.
     * `5.3.1.` [Promoting to release](promoting-to-release)
   * `5.4.` [Archiving and lifecycle](archiving-and-lifecycle)
   * `5.5.` [Podling releases](podling-releases)
+  * `5.6.` [Making a release with the client](client-guide)
 * `6.` [Release catalog](release-catalog)
 * `7.` [Developer guide](developer-guide)
   * `7.1.` [Overview of the code](overview-of-the-code)

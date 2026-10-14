@@ -119,12 +119,7 @@ from start to announcement, including starting the release and uploading files t
 authenticates with a [personal access token](release-manager-setup#personal-access-tokens), and it
 can also drive rsync for you once you have registered an [SSH key](release-manager-setup#ssh-keys).
 
-The client's own
-[release process guide](https://github.com/apache/tooling-releases-client/blob/main/RELEASE-PROCESS.md)
-covers installation and follows a release from start to finish, and its
-[command reference](https://github.com/apache/tooling-releases-client/blob/main/COMMANDS.md) lists
-every command. The client and the API that it uses are not yet stable, so take care when relying on
-either in unattended scripts.
+Our [client guide](client-guide) covers installation and follows a release from start to announcement. The client's [command reference](https://github.com/apache/tooling-releases-client/blob/main/COMMANDS.md) lists every command. The client and the API that it uses are not yet stable, so take care when relying on either in unattended scripts.
 
 ## Maven plugin
 

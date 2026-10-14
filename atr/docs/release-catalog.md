@@ -2,7 +2,7 @@
 
 **Up**: [Documentation](.)
 
-**Prev**: `5.5.` [Podling releases](podling-releases)
+**Prev**: `5.6.` [Making a release with the client](client-guide)
 
 **Next**: `7.` [Developer guide](developer-guide)
 
