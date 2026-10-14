@@ -186,7 +186,10 @@ def osv_severity_to_cdx(severity: list[dict[str, Any]] | None, textual: str) -> 
 
 
 def patch_document(doc: dict[str, Any], patch_ops: models.patch.Patch) -> dict[str, Any]:
-    return jsonpatch.apply_patch(doc, patch_to_data(patch_ops))
+    patched_doc = jsonpatch.apply_patch(doc, patch_to_data(patch_ops))
+    if not isinstance(patched_doc, dict):
+        raise ValueError("Patched SBOM document must be a JSON object")
+    return patched_doc
 
 
 def patch_to_data(patch_ops: models.patch.Patch) -> list[dict[str, Any]]:

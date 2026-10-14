@@ -791,7 +791,7 @@ def _get_widget_type(field_info: pydantic.fields.FieldInfo) -> Widget:  # noqa: 
     annotation = field_info.annotation
     origin = get_origin(annotation)
 
-    if (annotation is not None) and hasattr(annotation, "__value__"):
+    if isinstance(annotation, TypeAliasType):
         annotation = annotation.__value__
         origin = get_origin(annotation)
 

@@ -5,7 +5,7 @@ aiofiles==25.1.0
     #   tooling-trusted-releases
 aiohappyeyeballs==2.7.1
     # via aiohttp
-aiohttp==3.14.3
+aiohttp==3.14.4
     # via
     #   asfpy
     #   asfquart
@@ -32,20 +32,20 @@ asfpy==0.60
     # via asfquart
 asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@1ae6700dbcefd8a46f123b31f1e7bbe8eb4a5e31
     # via tooling-trusted-releases
-asyncssh==2.24.0
+asyncssh==2.24.1
     # via tooling-trusted-releases
 attrs==26.1.0
     # via
     #   aiohttp
     #   jsonschema
     #   referencing
-blake3==1.0.10
+blake3==1.0.11
     # via tooling-trusted-releases
 blinker==1.9.0
     # via
     #   flask
     #   quart
-blockbuster==1.5.28
+blockbuster==1.5.29
     # via tooling-trusted-releases
 boolean-py==5.0
     # via license-expression
@@ -84,11 +84,11 @@ defusedxml==0.7.1
 distlib==0.4.3
     # via virtualenv
 djlint==1.46.4
-dnspython==2.8.0
+dnspython==2.9.0
     # via
     #   email-validator
     #   tooling-trusted-releases
-dulwich==1.2.15
+dulwich==1.2.17
     # via tooling-trusted-releases
 dunamai==1.26.2
     # via tooling-trusted-releases
@@ -108,7 +108,7 @@ ezt==1.1
     # via
     #   asfpy
     #   asfquart
-filelock==4.0.8
+filelock==4.0.12
     # via
     #   python-discovery
     #   virtualenv
@@ -127,9 +127,7 @@ gitignore-parser==0.1.13
 google-re2==1.1.20251105
     # via tooling-trusted-releases
 greenlet==3.5.6
-    # via
-    #   sqlalchemy
-    #   tooling-trusted-releases
+    # via tooling-trusted-releases
 h11==0.16.0
     # via
     #   hypercorn
@@ -171,11 +169,11 @@ jsbeautifier==2.0.3
     # via
     #   cssbeautifier
     #   djlint
-json5==0.15.0
+json5==0.16.0
     # via djlint
-jsonpatch==1.33
+jsonpatch==1.34
     # via tooling-trusted-releases
-jsonpointer==3.1.1
+jsonpointer==3.2.0
     # via
     #   jsonpatch
     #   jsonschema
@@ -193,7 +191,7 @@ mako==1.4.3
     # via alembic
 markdown-it-py==4.2.0
     # via rich
-markupsafe==3.0.3
+markupsafe==3.0.4
     # via
     #   flask
     #   htpy
@@ -212,7 +210,7 @@ nodeenv==1.11.0
     # via
     #   pre-commit
     #   pyright
-orjson==3.12.0
+orjson==3.13.0
     # via tooling-trusted-releases
 packageurl-python==0.17.6
     # via cyclonedx-python-lib
@@ -223,7 +221,7 @@ packaging==26.3
     #   virtualenv
 pathspec==1.1.1
     # via djlint
-platformdirs==4.12.2
+platformdirs==4.12.4
     # via virtualenv
 pre-commit==4.6.2
 priority==2.0.0
@@ -240,16 +238,16 @@ py-serializable==2.1.0
     # via cyclonedx-python-lib
 pyasn1==0.6.4
     # via ldap3
-pycparser==3.0 ; implementation_name != 'PyPy'
+pycparser==3.11 ; implementation_name != 'PyPy'
     # via cffi
-pycryptodomex==3.23.0
+pycryptodomex==3.24.0
     # via ldap3
-pydantic==2.13.5
+pydantic==2.14.0
     # via
     #   pydantic-xml
     #   quart-schema
     #   sqlmodel
-pydantic-core==2.46.5
+pydantic-core==2.50.0
     # via
     #   pydantic
     #   pydantic-xml
@@ -310,13 +308,13 @@ rfc8785==0.1.4
     # via tooling-trusted-releases
 rich==15.0.0
     # via tooling-trusted-releases
-rpds-py==2026.6.3
+rpds-py==2026.9.1
     # via
     #   jsonschema
     #   referencing
 rpgp-py==0.20.0
     # via tooling-trusted-releases
-ruff==0.16.9
+ruff==0.16.10
 semver==3.1.0
     # via tooling-trusted-releases
 six==1.17.0
@@ -325,11 +323,11 @@ six==1.17.0
     #   rfc3339-validator
 sortedcontainers==2.4.0
     # via cyclonedx-python-lib
-sqlalchemy==2.0.54
+sqlalchemy==2.1.4
     # via
     #   alembic
     #   sqlmodel
-sqlmodel==0.0.47
+sqlmodel==0.0.48
     # via tooling-trusted-releases
 ssh-audit==3.9.0
     # via tooling-trusted-releases
@@ -354,7 +352,7 @@ typing-extensions==4.16.0
     #   typing-inspection
 typing-inspection==0.4.4
     # via pydantic
-tzdata==2026.4
+tzdata==2026.5
     # via arrow
 uri-template==1.3.0
     # via jsonschema
@@ -364,7 +362,7 @@ urllib3==2.8.0
     #   requests
 uvloop==0.23.0
     # via hypercorn
-virtualenv==21.14.2
+virtualenv==21.14.6
     # via pre-commit
 watchfiles==1.3.0
     # via
