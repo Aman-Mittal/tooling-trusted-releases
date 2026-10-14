@@ -151,7 +151,7 @@ When publication is complete, announce to a mailing list permitted for your proj
 atr announce example 1.0.0 -m announce@apache.org
 ```
 
-ATR fills the body from your project's announcement template unless you add `--body-file announce.txt`. The client sends to a single list, so use the website to copy the announcement to other lists. If the files have not reached the download servers yet, wait a few minutes and try again. ATR allows five attempts an hour. Once ATR accepts the announcement, it adds the release to the [release catalog](release-catalog) and queues the email for delivery. The released files can no longer change.
+ATR fills the body from your project's announcement template unless you add `--body-file announce.txt`. To copy the announcement to other permitted lists, add `--cc` or `--bcc` once for each list. If the files have not reached the download servers yet, wait a few minutes and try again. ATR allows five attempts an hour. Once ATR accepts the announcement, it adds the release to the [release catalog](release-catalog) and queues the email for delivery. The released files can no longer change.
 
 ## Further information
 

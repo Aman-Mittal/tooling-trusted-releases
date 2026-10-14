@@ -16,6 +16,8 @@
 # under the License.
 
 import contextlib
+import inspect
+import unittest.mock as mock
 from types import SimpleNamespace
 
 import pytest
@@ -55,6 +57,25 @@ async def test_release_announce_explicit_revision_is_rendered(monkeypatch) -> No
 
     assert (body, fullname) == ("RENDERED BODY", "Example User")
     assert calls["options"].revision_number == safe.RevisionNumber("00002")
+
+
+@pytest.mark.asyncio
+async def test_release_announce_forwards_cc_and_bcc(monkeypatch) -> None:
+    warm = mock.AsyncMock()
+    write = mock.MagicMock()
+    write.return_value.__aenter__.return_value = warm
+    monkeypatch.setattr(api, "_jwt_asf_uid", lambda: "user")
+    monkeypatch.setattr(api, "_release_announce_body", mock.AsyncMock(return_value=("Body", "Example User")))
+    monkeypatch.setattr(storage, "write_as_project_release_manager", write)
+    data = _args(body="Body")
+    data.email_cc = ["dev@example.apache.org", "user@example.apache.org"]
+    data.email_bcc = ["private@example.apache.org"]
+
+    await inspect.unwrap(api.release_announce)(_release_announce="release/announce", data=data)
+
+    kwargs = warm.announce.release.await_args.kwargs
+    assert kwargs["email_cc"] == ["dev@example.apache.org", "user@example.apache.org"]
+    assert kwargs["email_bcc"] == ["private@example.apache.org"]
 
 
 @pytest.mark.asyncio

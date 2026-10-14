@@ -133,6 +133,18 @@ async def test_announce_blocked_when_mail_relay_unreachable(
 
 
 @pytest.mark.asyncio
+async def test_announce_rejects_duplicate_recipients(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    calls: list[str] = []
+    release_manager = announcing_writer(monkeypatch, tmp_path, calls)
+
+    with pytest.raises(storage.AccessError, match="Duplicate recipient") as info:
+        await release_manager.release(**release_arguments(), email_bcc=["announce@example.apache.org"])
+
+    assert info.value.status == 400
+    assert calls == []
+
+
+@pytest.mark.asyncio
 async def test_announce_rejects_publish_without_revision(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:

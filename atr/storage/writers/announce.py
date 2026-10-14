@@ -166,6 +166,10 @@ class ReleaseManager(CommitteeParticipant):
         for addr in all_addrs:
             if addr not in permitted:
                 raise storage.AccessError(f"You are not permitted to send announcements to {addr}", status=403)
+        try:
+            util.validate_no_duplicate_recipients(all_addrs)
+        except ValueError as e:
+            raise storage.AccessError(str(e), status=400) from e
         policy = release.release_policy or release.project.release_policy
         if policy and policy.file_tag_mappings:
             missing = []

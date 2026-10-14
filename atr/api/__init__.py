@@ -1315,6 +1315,8 @@ async def release_announce(
                 email_to=data.email_to,
                 body=body,
                 fullname=fullname,
+                email_cc=data.email_cc,
+                email_bcc=data.email_bcc,
             )
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e
