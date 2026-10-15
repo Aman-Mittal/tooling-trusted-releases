@@ -79,6 +79,11 @@ class SubmitForm(ResolveFormBase):
         default="",
         max_length=constants.EARLY_VOTE_REASON_MAX_LENGTH,
     )
+    security_override: form.Bool = form.label(
+        "Force as the ASF Security Team",
+        "Resolve this vote regardless of the vote count and voting period. This action is audited."
+        " Automatic SVN publishing and automatic second round resolution are not applied.",
+    )
     automatic_resolve_when_finished: form.Bool = form.label(
         "Automatically resolve the second round vote",
         widget=form.Widget.CUSTOM,

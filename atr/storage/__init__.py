@@ -281,6 +281,12 @@ class WriteAsCommitteeAdmin(WriteAsCommitteeMember):
         self.keys = writers.keys.FoundationAdmin(write, self, data, committee_key)
 
 
+class WriteAsSecurityTeam(WriteAs):
+    def __init__(self, write: Write, data: db.Session, committee_key: str):
+        warm = WriteAsReleaseManager(write, data, committee_key)
+        self.vote_resolve = writers.vote.SecurityTeam(write, warm, data, committee_key).resolve
+
+
 class WriteAsUserService(WriteAs):
     def __init__(self, asf_uid: str, write: Write, data: db.Session):
         asf_uid = asf_uid.strip()
@@ -571,6 +577,26 @@ class Write:
         except Exception as e:
             return outcome.Error(e)
         return outcome.Result(warm)
+
+    async def as_project_security_team(self, project_key: safe.ProjectKey) -> WriteAsSecurityTeam:
+        write_as_outcome = await self.as_project_security_team_outcome(project_key)
+        return write_as_outcome.result_or_raise()
+
+    async def as_project_security_team_outcome(
+        self, project_key: safe.ProjectKey
+    ) -> outcome.Outcome[WriteAsSecurityTeam]:
+        project = await self.__data.project(str(project_key), _committee=True).demand(
+            AccessError(f"Project not found: {project_key}", status=404)
+        )
+        if project.committee is None:
+            return outcome.Error(AccessError("No committee found for project - Invalid state", status=500))
+        if self.__authorisation.asf_uid is None:
+            return outcome.Error(AccessError("Not authorized", status=403))
+        try:
+            wast = WriteAsSecurityTeam(self, self.__data, project.committee.key)
+        except Exception as e:
+            return outcome.Error(e)
+        return outcome.Result(wast)
 
     def ensure_release_writable(self, release: sql.Release) -> None:
         if not release.is_embargoed:

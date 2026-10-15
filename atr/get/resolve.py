@@ -22,6 +22,7 @@ from typing import Literal
 import htpy
 
 import atr.blueprints.get as get
+import atr.constants as constants
 import atr.construct as construct
 import atr.db.interaction as interaction
 import atr.form
@@ -153,7 +154,8 @@ async def selected(  # noqa: C901
         mail_warnings = latest_vote_task.result.mail_send_warnings
 
     pass_fail_allowed = interaction.vote_pass_fail_allowed(latest_vote_task)
-    bypass_active = interaction.vote_resolution_bypass(release, session.uid)
+    is_security_team = constants.SECURITY_COMMITTEE_KEY in session.member_committees
+    bypass_active = interaction.vote_resolution_bypass(release, session.uid) or is_security_team
     vote_end = interaction.vote_end_get(latest_vote_task)
     is_trusted_mode = release.effective_vote_mode == sql.VoteMode.TRUSTED
     vote_round = interaction.trusted_vote_round(release)
@@ -349,6 +351,8 @@ async def selected(  # noqa: C901
     skip.append("email_bcc")
     if not early_completion:
         skip.append("early_reason")
+    if not is_security_team:
+        skip.append("security_override")
 
     if form_cls is shared.resolve.SubmitForm:
         defaults["result_subject"] = tabulate.vote_result_subject(release, "{{OUTCOME}}")

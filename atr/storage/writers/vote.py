@@ -521,6 +521,8 @@ class ReleaseManager(CommitteeParticipant):
         additional_bcc: list[str] | None = None,
         early_reason: str = "",
     ) -> tuple[sql.Release, int | None, str, str | None]:
+        security_override = isinstance(self, SecurityTeam)
+        automatic_resolve_when_finished = automatic_resolve_when_finished and (not security_override)
         release = await self.__data.release(
             project_key=str(project_key),
             version=str(version_key),
@@ -531,7 +533,21 @@ class ReleaseManager(CommitteeParticipant):
             _project_release_policy=True,
         ).demand(storage.AccessError("Release not found", status=404))
         storage.ensure_project_active(release.project)
-        self.__write.ensure_release_writable(release)
+        if security_override:
+            self.__write_as.append_to_audit_log(
+                asf_uid=self.__asf_uid,
+                project_key=str(project_key),
+                version_key=release.version,
+                revision_number=release.latest_revision_number,
+                vote_seq=release.current_vote_seq,
+                vote_result=vote_result,
+                security_override_requested=True,
+            )
+            vote_task = await interaction.release_current_vote_task(release, self.__data)
+            if (vote_task is None) or (interaction.task_mid_get(vote_task) is None):
+                raise storage.AccessError("The vote has not been announced, so it cannot be forced", status=409)
+        else:
+            self.__write.ensure_release_writable(release)
         if release.expedited:
             additional_cc = []
             additional_bcc = []
@@ -602,6 +618,7 @@ class ReleaseManager(CommitteeParticipant):
         completed_early_reason = None
         if (
             (vote_result != "cancelled")
+            and (not security_override)
             and (not interaction.vote_pass_fail_allowed(latest_vote_task))
             and (not interaction.vote_resolution_bypass(release, self.__asf_uid))
         ):
@@ -717,6 +734,7 @@ class ReleaseManager(CommitteeParticipant):
         additional_bcc: list[str] | None = None,
         early_reason: str | None = None,
     ) -> tuple[sql.Release, int | None, str, str | None]:
+        security_override = isinstance(self, SecurityTeam)
         if (voting_round == 1) and (vote_result == "passed"):
             await self.__data.commit()
             await self.__data.begin_immediate()
@@ -774,7 +792,7 @@ class ReleaseManager(CommitteeParticipant):
                 subject_data, body_data = await construct.start_vote_subject_and_body(
                     subject_template, body_template, options
                 )
-                carried_publish_when_resolved = bool(
+                carried_publish_when_resolved = (not security_override) and bool(
                     latest_vote_task.task_args.get("automatic_publish_when_resolved", False)
                 )
                 carried_publish_asf_uid = latest_vote_task.task_args.get("automatic_publish_asf_uid")
@@ -839,7 +857,7 @@ class ReleaseManager(CommitteeParticipant):
                 project_key,
                 release.safe_version_key,
                 release.safe_latest_revision_number,
-                latest_vote_task,
+                None if security_override else latest_vote_task,
                 release,
             )
             if (voting_round == 2) and (release.podling_thread_id is not None):
@@ -891,6 +909,7 @@ class ReleaseManager(CommitteeParticipant):
                 voting_round=voting_round,
                 second_round_vote_seq=second_round_vote_seq,
                 early_reason=early_reason,
+                security_override=security_override,
             )
         else:
             self.__write_as.append_to_audit_log(
@@ -900,6 +919,7 @@ class ReleaseManager(CommitteeParticipant):
                 vote_result=vote_result,
                 voting_round=voting_round,
                 early_reason=early_reason,
+                security_override=security_override,
             )
         return release, voting_round, success_message, error_message
 
@@ -1009,6 +1029,7 @@ class ReleaseManager(CommitteeParticipant):
         additional_bcc: list[str] | None = None,
         early_reason: str = "",
     ) -> tuple[sql.Release, int | None, str, str | None]:
+        security_override = isinstance(self, SecurityTeam)
         completed_early_reason: str | None = None
         latest_vote_task: sql.Task | None = None
         second_round_vote_mode: sql.VoteMode | None = None
@@ -1041,7 +1062,7 @@ class ReleaseManager(CommitteeParticipant):
 
             latest_vote_task = await interaction.release_current_vote_task(release, self.__data)
             vote_end = interaction.vote_end_get(latest_vote_task)
-            resolution_bypass = interaction.vote_resolution_bypass(release, self.__asf_uid)
+            resolution_bypass = security_override or interaction.vote_resolution_bypass(release, self.__asf_uid)
             if (
                 (vote_result != "cancelled")
                 and (vote_end is not None)
@@ -1104,7 +1125,7 @@ class ReleaseManager(CommitteeParticipant):
                 subject_data, body_data = await construct.start_vote_subject_and_body(
                     subject_template, body_template, options
                 )
-                carried_publish_when_resolved = bool(
+                carried_publish_when_resolved = (not security_override) and bool(
                     latest_vote_task.task_args.get("automatic_publish_when_resolved", False)
                 )
                 carried_publish_asf_uid = latest_vote_task.task_args.get("automatic_publish_asf_uid")
@@ -1184,7 +1205,7 @@ class ReleaseManager(CommitteeParticipant):
                 project_key,
                 release.safe_version_key,
                 release.safe_latest_revision_number,
-                latest_vote_task,
+                None if security_override else latest_vote_task,
                 release,
             )
             if (voting_round == 2) and (release.podling_thread_id is not None):
@@ -1231,6 +1252,7 @@ class ReleaseManager(CommitteeParticipant):
             second_round_vote_seq=second_round_vote_seq,
             second_round_vote_mode=second_round_vote_mode.value if (second_round_vote_mode is not None) else None,
             early_reason=completed_early_reason,
+            security_override=security_override,
         )
         return release, voting_round, success_message, error_message
 
@@ -1430,6 +1452,19 @@ class CommitteeMember(ReleaseManager):
             raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
+
+
+class SecurityTeam(ReleaseManager):
+    def __init__(
+        self,
+        write: storage.Write,
+        write_as: storage.WriteAsReleaseManager,
+        data: db.Session,
+        committee_key: str,
+    ):
+        if not write.authorisation.is_member_of(constants.SECURITY_COMMITTEE_KEY):
+            raise storage.AccessError("Not a member of the ASF Security Team", status=403)
+        super().__init__(write, write_as, data, committee_key)
 
 
 def format_vote_email_body(

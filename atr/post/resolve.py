@@ -54,10 +54,16 @@ async def selected(
 
     automatic_resolve_when_finished = _read_auto_resolve_flag(submit_form)
     notify_when_finished = _read_notify_flag(submit_form)
+    security_override = isinstance(submit_form, shared.resolve.SubmitForm) and submit_form.security_override
 
     try:
-        async with storage.write_as_project_release_manager(project_key) as warm:
-            _release, voting_round, success_message, error_message = await warm.vote.resolve(
+        async with storage.write() as write:
+            resolve = (
+                (await write.as_project_security_team(project_key)).vote_resolve
+                if security_override
+                else (await write.as_project_release_manager(project_key)).vote.resolve
+            )
+            _release, voting_round, success_message, error_message = await resolve(
                 project_key,
                 version_key,
                 writer_result,

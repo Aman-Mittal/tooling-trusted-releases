@@ -27,6 +27,7 @@ import htpy
 
 import atr.blueprints.get as get
 import atr.config as config
+import atr.constants as constants
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
@@ -116,6 +117,8 @@ async def render_options_page(
         UserCategory.PMC_MEMBER,
         UserCategory.PMC_MEMBER_RM,
     )
+    if (session is not None) and (constants.SECURITY_COMMITTEE_KEY in session.member_committees):
+        show_resolve_section = True
 
     file_totals = await checks.get_file_totals(release, session)
     archive_url = await _get_archive_url(release, session, latest_vote_task)
@@ -618,7 +621,7 @@ def _render_section_resolve(page: htm.Block, release: sql.Release, user_category
             ]
         ]
     else:
-        page.p["When the voting period concludes, use the resolution page to tally votes and record the outcome."]
+        page.p["Use the resolution page to review votes and record the outcome."]
 
         if release.effective_vote_mode == sql.VoteMode.MANUAL:
             resolve_url = util.as_url(

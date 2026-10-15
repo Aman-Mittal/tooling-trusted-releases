@@ -611,13 +611,14 @@ async def test_podling_double_pass_raises_error() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("writer_cls", [vote.CommitteeMember, vote.SecurityTeam])
 @pytest.mark.parametrize("vote_mode", [sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED])
 async def test_podling_round_one_pass_passes_thread_to_second_round_body(
-    monkeypatch: pytest.MonkeyPatch, vote_mode: sql.VoteMode
+    monkeypatch: pytest.MonkeyPatch, vote_mode: sql.VoteMode, writer_cls: type[vote.ReleaseManager]
 ) -> None:
     data = _mock_data()
     write_as = _mock_write_as()
-    writer = _writer_with_mocks(data, write_as)
+    writer = writer_cls(_security_owner_write(), write_as, data, "project")
     writer._ReleaseManager__send_resolution = mock.AsyncMock(return_value=None)
     writer.start = mock.AsyncMock(return_value=SimpleNamespace(task_args={"vote_seq": 4}))
 
@@ -636,6 +637,7 @@ async def test_podling_round_one_pass_passes_thread_to_second_round_body(
 
     vote_task = _latest_vote_task_with_end(-24)
     vote_task.task_args["vote_duration"] = 72
+    vote_task.task_args["automatic_publish_when_resolved"] = True
     render = mock.AsyncMock(return_value=("subject", "body"))
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=vote_task))
     monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release, _asf_uid: False)
@@ -651,11 +653,20 @@ async def test_podling_round_one_pass_passes_thread_to_second_round_body(
     monkeypatch.setattr(vote.construct, "start_vote_subject_default", mock.AsyncMock(return_value="subject"))
     monkeypatch.setattr(vote.construct, "start_vote_subject_and_body", render)
 
-    await writer.resolve(_project_key(), _version_key(), "passed", "Chair", "The vote passed.")
+    await writer.resolve(
+        _project_key(),
+        _version_key(),
+        "passed",
+        "Chair",
+        "The vote passed.",
+        automatic_resolve_when_finished=True,
+    )
 
     render.assert_awaited_once()
     assert render.call_args.args[2].first_round_thread_id == thread_id
     writer.start.assert_awaited_once()
+    assert writer.start.call_args.kwargs["automatic_publish_when_resolved"] is (writer_cls is vote.CommitteeMember)
+    assert writer.start.call_args.kwargs["automatic_resolve_when_finished"] is (writer_cls is vote.CommitteeMember)
 
 
 @pytest.mark.asyncio
@@ -983,6 +994,7 @@ async def test_resolve_page_allows_early_result_when_bypass_is_active(
     assert form_render.call_args.kwargs["model_cls"] is shared.resolve.SubmitForm
     assert form_render.call_args.kwargs["submit_classes"] == "btn-primary"
     assert form_render.call_args.kwargs["submit_label"] == "Resolve vote"
+    assert "security_override" in form_render.call_args.kwargs["skip"]
 
 
 @pytest.mark.parametrize(
@@ -1111,6 +1123,17 @@ async def test_resolve_rejects_early_passed(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 @pytest.mark.asyncio
+async def test_resolve_rejects_security_override_for_unannounced_vote(monkeypatch: pytest.MonkeyPatch) -> None:
+    writer, data, _write_as = _security_override_writer(monkeypatch)
+    monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=None))
+
+    with pytest.raises(storage.AccessError, match="has not been announced"):
+        await writer.resolve(_project_key(), _version_key(), "passed", "Chair", "The vote has passed.")
+
+    data.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_resolve_rejects_stale_email_vote_serial(monkeypatch: pytest.MonkeyPatch) -> None:
     data = _mock_data()
     write_as = _mock_write_as()
@@ -1134,6 +1157,26 @@ async def test_resolve_rejects_stale_email_vote_serial(monkeypatch: pytest.Monke
             expected_vote_seq=1,
             expected_vote_mode=sql.VoteMode.EMAIL,
         )
+
+
+@pytest.mark.asyncio
+async def test_security_override_request_audit_survives_mail_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    writer, data, write_as = _security_override_writer(monkeypatch)
+    writer._ReleaseManager__send_resolution = mock.AsyncMock(side_effect=RuntimeError("mail relay down"))
+
+    with pytest.raises(RuntimeError, match="mail relay down"):
+        await writer.resolve(_project_key(), _version_key(), "passed", "Chair", "The vote has passed.")
+
+    data.commit.assert_awaited()
+    write_as.append_to_audit_log.assert_called_once_with(
+        asf_uid="chair",
+        project_key="project",
+        version_key="1.0.0",
+        revision_number="00001",
+        vote_seq=1,
+        vote_result="passed",
+        security_override_requested=True,
+    )
 
 
 @pytest.mark.asyncio
@@ -1404,6 +1447,7 @@ async def test_trusted_resolve_rejects_insufficient_votes_for_other_production_p
     data = _mock_data()
     write_as = _mock_write_as()
     writer = _writer_with_mocks(data, write_as)
+    writer._ReleaseManager__write.authorisation.is_member_of = lambda key: key == "security"
 
     release = _candidate_release()
     release.project_key = "project"
@@ -1433,6 +1477,28 @@ async def test_trusted_resolve_rejects_insufficient_votes_for_other_production_p
             expected_vote_seq=1,
             expected_vote_mode=sql.VoteMode.TRUSTED,
         )
+
+
+@pytest.mark.asyncio
+async def test_trusted_resolve_page_offers_security_override_to_security_team(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release = _candidate_release()
+    release.vote_mode = sql.VoteMode.TRUSTED
+    release.effective_vote_mode = sql.VoteMode.TRUSTED
+    release.current_vote_seq = 7
+
+    _context, form_render, _archive_lookup, _vote_committee, _vote_details = await _render_standard_resolve_page(
+        monkeypatch,
+        release=release,
+        pass_fail_allowed=False,
+        security_team=True,
+        vote_end=datetime.datetime(2026, 4, 1, 12, 0, 0, tzinfo=datetime.UTC),
+    )
+
+    assert form_render.call_args.kwargs["model_cls"] is shared.resolve.SubmitForm
+    assert "security_override" not in form_render.call_args.kwargs["skip"]
+    assert ("Passed", "Passed") in form_render.call_args.kwargs["defaults"]["vote_result"]
 
 
 @pytest.mark.asyncio
@@ -1612,6 +1678,30 @@ async def test_trusted_resolve_passes_round_two_via_carried_ipmc_ballots(monkeyp
         safe.RelPath("project-1.0.0"),
         publisher_asf_uid="initiator",
     )
+
+
+@pytest.mark.asyncio
+async def test_trusted_resolve_security_override_passes_embargoed_vote_early_without_ballots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    writer, _data, write_as = _security_override_writer(monkeypatch)
+    writer._ReleaseManager__send_resolution = mock.AsyncMock(return_value=None)
+
+    _release, _round, success, _error = await writer.resolve(
+        _project_key(),
+        _version_key(),
+        "passed",
+        "Chair",
+        "The vote has passed.",
+        expected_vote_seq=1,
+        expected_vote_mode=sql.VoteMode.TRUSTED,
+    )
+
+    assert success == "Vote marked as passed"
+    writer._ReleaseManager__write.ensure_release_writable.assert_not_called()
+    write_as.release.publish_to_svn.assert_not_awaited()
+    assert write_as.append_to_audit_log.call_args_list[0].kwargs["security_override_requested"] is True
+    assert write_as.append_to_audit_log.call_args.kwargs["security_override"] is True
 
 
 def test_vote_end_get_returns_datetime_for_valid_task() -> None:
@@ -1987,12 +2077,14 @@ async def _render_standard_resolve_page(
     ballots_for_resolution: mock.AsyncMock | None = None,
     pass_fail_allowed: bool = True,
     resolution_bypass: bool = False,
+    security_team: bool = False,
     vote_end: datetime.datetime | None = None,
 ) -> tuple[dict[str, object], mock.AsyncMock, mock.AsyncMock, mock.AsyncMock, mock.AsyncMock]:
     release = release or _candidate_release()
     session = SimpleNamespace(
         uid="chair",
         fullname="Project Chair",
+        member_committees=["security"] if security_team else [],
         release=mock.AsyncMock(return_value=release),
     )
     context: dict[str, object] = {}
@@ -2060,6 +2152,41 @@ def _resolve_handler():
         if name == "func":
             return cell.cell_contents
     raise AssertionError("Could not find wrapped resolve handler")
+
+
+def _security_override_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[vote.SecurityTeam, mock.MagicMock, mock.MagicMock]:
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = vote.SecurityTeam(_security_owner_write(), write_as, data, "project")
+
+    release = _candidate_release()
+    release.is_embargoed = True
+    release.expedited = True
+    release.vote_mode = sql.VoteMode.TRUSTED
+    release.effective_vote_mode = sql.VoteMode.TRUSTED
+    release.current_vote_seq = 1
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=release)
+    data.release = mock.MagicMock(return_value=query)
+
+    vote_task = _latest_vote_task_with_end(24)
+    vote_task.task_args["automatic_publish_when_resolved"] = True
+    monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=vote_task))
+    monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release, _asf_uid: False)
+    monkeypatch.setattr(interaction, "effective_trusted_ballots", mock.AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        interaction, "trusted_ballot_summary", mock.AsyncMock(return_value=interaction.TrustedVoteSummary())
+    )
+    return writer, data, write_as
+
+
+def _security_owner_write() -> mock.MagicMock:
+    write = mock.MagicMock()
+    write.authorisation.asf_uid = "chair"
+    write.authorisation.is_member_of = lambda key: key == "security"
+    return write
 
 
 def _version_key() -> safe.VersionKey:

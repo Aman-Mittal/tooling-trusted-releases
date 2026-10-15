@@ -133,6 +133,56 @@ async def test_release_manager_outcome_succeeds_for_pmc_member() -> None:
     assert isinstance(result, outcome.Result)
 
 
+@pytest.mark.parametrize("security_override", [False, True])
+def test_security_override_is_not_a_resolve_argument(security_override: bool) -> None:
+    officer_write = write(authorisation("officer", member_of=frozenset({"alpha", "security"})), None)
+    data = mock.MagicMock()
+    resolvers = [
+        storage.WriteAsReleaseManager(officer_write, data, "alpha").vote.resolve,
+        storage.WriteAsSecurityTeam(officer_write, data, "alpha").vote_resolve,
+    ]
+    for resolve in resolvers:
+        with pytest.raises(TypeError, match="security_override"):
+            resolve(
+                safe.ProjectKey("example"),
+                safe.VersionKey("1.0.0"),
+                "passed",
+                "Officer",
+                "The vote passed.",
+                security_override=security_override,
+            )
+
+
+def test_security_team_construction_rejects_pmc_member_outside_security_team() -> None:
+    pmc_write = write(authorisation("chair", member_of=frozenset({"alpha"})), None)
+    with pytest.raises(storage.AccessError) as facade_error:
+        storage.WriteAsSecurityTeam(pmc_write, mock.MagicMock(), "alpha")
+    with pytest.raises(storage.AccessError) as writer_error:
+        storage.writers.vote.SecurityTeam(pmc_write, mock.MagicMock(), mock.MagicMock(), "alpha")
+
+    assert facade_error.value.status == 403
+    assert writer_error.value.status == 403
+
+
+@pytest.mark.asyncio
+async def test_security_team_outcome_rejects_pmc_member_outside_security_team() -> None:
+    auth = authorisation("chair", member_of=frozenset({"alpha"}))
+    proj = project(committee())
+    result = await write(auth, proj).as_project_security_team_outcome(safe.ProjectKey("example"))
+
+    assert isinstance(result, outcome.Error)
+    assert "Not a member of the ASF Security Team" in str(result.error_or_none())
+
+
+@pytest.mark.asyncio
+async def test_security_team_outcome_succeeds_for_security_team_owner() -> None:
+    auth = authorisation("officer", member_of=frozenset({"security"}))
+    proj = project(committee())
+    result = await write(auth, proj).as_project_security_team_outcome(safe.ProjectKey("example"))
+
+    assert isinstance(result, outcome.Result)
+
+
 def write(auth: object, project_value: object | None) -> storage.Write:
     data = mock.MagicMock()
     data.project = mock.MagicMock(return_value=ProjectQuery(project_value))
