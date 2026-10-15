@@ -28,12 +28,15 @@ import sqlalchemy
 import sqlalchemy.orm as orm
 import sqlmodel
 
+import atr.cycles as cycles
 import atr.db as db
+import atr.models.calver as calver
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
 import atr.paths as paths
+import atr.util as util
 
 
 class Divergence(NamedTuple):
@@ -68,6 +71,16 @@ T = TypeVar("T")
 
 # Same ASF UID character set as principal.py
 _ASF_UID_PATTERN: Final = re.compile(r"^[-_a-z0-9]+$")
+
+_FETCH_URLS: Final = (
+    "policy_announce_release_template_url",
+    "policy_finish_vote_template_url",
+    "policy_rat_excludes_url",
+    "policy_start_vote_template_url",
+    "policy_vote_comment_template_url",
+)
+
+_IGNORE_GLOBS: Final = ("release_glob", "checker_glob", "primary_rel_path_glob", "member_rel_path_glob", "message_glob")
 
 _PHASE_VOTE_FIELDS: Final[dict[sql.ReleasePhase, tuple[tuple[str, ...], tuple[str, ...]]]] = {
     sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT: (
@@ -168,6 +181,27 @@ async def artifacts(data: db.Session) -> AsyncAnnotatedDivergences:
         if (digest is not None) and (not _SHA3_256_PATTERN.fullmatch(digest)):
             divergence = Divergence("64 lowercase hexadecimal digits", repr(digest))
             yield AnnotatedDivergence(["Artifact.signature_sha3_256"], "artifact_signature", source, divergence)
+
+
+async def check_result_ignores(data: db.Session) -> AsyncAnnotatedDivergences:
+    via = sql.validate_instrumented_attribute
+    columns = [via(getattr(sql.CheckResultIgnore, name)) for name in _IGNORE_GLOBS]
+    statement = sqlalchemy.select(
+        via(sql.CheckResultIgnore.id), via(sql.CheckResultIgnore.project_key), *columns
+    ).order_by(via(sql.CheckResultIgnore.id))
+    for ignore_id, project_key, *patterns in (await data.execute(statement)).all():
+        for name, pattern in zip(_IGNORE_GLOBS, patterns):
+            if pattern is None:
+                continue
+            try:
+                validation.validate_ignore_pattern(pattern)
+            except ValueError:
+                yield AnnotatedDivergence(
+                    [f"CheckResultIgnore.{name}"],
+                    "check_result_ignores",
+                    f"{project_key} ignore {ignore_id}",
+                    Divergence("a valid ignore pattern", repr(pattern)),
+                )
 
 
 def committee(c: sql.Committee) -> AnnotatedDivergences:
@@ -352,9 +386,11 @@ async def everything(data: db.Session) -> AsyncAnnotatedDivergences:
     for checks in (
         allocation_counters,
         artifacts,
+        check_result_ignores,
         personal_access_tokens,
         quarantine_pending,
         quarantine_staging,
+        quarantines,
         release_finalise_publication,
     ):
         async for divergence in checks(data):
@@ -383,17 +419,38 @@ async def personal_access_tokens(data: db.Session) -> AsyncAnnotatedDivergences:
 def project(p: sql.Project) -> AnnotatedDivergences:
     """Check that a project is valid."""
 
+    yield from project_calver_format(p)
     yield from project_categories(p)
     yield from project_committee(p)
     yield from project_created(p)
     yield from project_created_by(p)
     yield from project_cycle_match(p)
     yield from project_download_path_suffix(p)
+    yield from project_fetch_urls(p)
     yield from project_full_name(p)
     yield from project_key(p)
+    yield from project_min_hours(p)
     yield from project_programming_languages(p)
     yield from project_recipient_defaults(p)
+    yield from project_security_contact(p)
+    yield from project_trusted_publishing(p)
     yield from project_version_pattern(p)
+    yield from project_vote_mode(p)
+
+
+@project_components("Project.calver_format", "Project.cycle_match")
+def project_calver_format(p: sql.Project) -> Divergences:
+    if p.calver_format is None:
+        return
+    if p.version_method != sql.VersionMethod.CALVER:
+        yield Divergence("calver_format to be unset when version_method is not calver", repr(p.calver_format))
+        return
+    try:
+        calver.validate(p.calver_format)
+    except ValueError:
+        yield Divergence("a valid calver format", repr(p.calver_format))
+        return
+    yield from divergences(calver.cycle_regex(p.calver_format), p.cycle_match)
 
 
 @project_components("Project.categories")
@@ -470,6 +527,16 @@ def project_download_path_suffix(p: sql.Project) -> Divergences:
         yield from _download_path_suffix(p.release_policy.download_path_suffix)
 
 
+@project_components("ReleasePolicy")
+def project_fetch_urls(p: sql.Project) -> Divergences:
+    for name in _FETCH_URLS:
+        url = getattr(p, name)
+        try:
+            validation.validate_fetch_url(url)
+        except ValueError:
+            yield Divergence(f"{name} to be an allowed https URL", repr(url))
+
+
 @project_components("Project.name")
 def project_full_name(p: sql.Project) -> Divergences:
     """Check that the project full_name is present and starts with 'Apache '."""
@@ -493,6 +560,14 @@ def project_key(p: sql.Project) -> Divergences:
         return True
 
     yield from divergences_predicate(okay, "value to be a valid project key", p.key)
+
+
+@project_components("ReleasePolicy.min_hours")
+def project_min_hours(p: sql.Project) -> Divergences:
+    try:
+        validation.validate_policy_min_hours(p.policy_min_hours)
+    except ValueError:
+        yield Divergence("0 or 72 to 168 hours", repr(p.policy_min_hours))
 
 
 @project_components("Project.programming_languages")
@@ -530,6 +605,29 @@ def project_recipient_defaults(p: sql.Project) -> Divergences:
             yield Divergence(f"{action} recipients on apache.org or a subdomain", repr(addresses))
 
 
+@project_components("Project.security_contact")
+def project_security_contact(p: sql.Project) -> Divergences:
+    try:
+        validation.validate_security_contact(p.committee_key or "", p.security_contact)
+    except ValueError:
+        yield Divergence("security@apache.org or the committee security address", repr(p.security_contact))
+
+
+@project_components("ReleasePolicy.github_repository_name", "ReleasePolicy.github_repository_branch")
+def project_trusted_publishing(p: sql.Project) -> Divergences:
+    name = p.policy_github_repository_name
+    branch = p.policy_github_repository_branch
+    workflow_paths = [
+        *p.policy_github_compose_workflow_path,
+        *p.policy_github_vote_workflow_path,
+        *p.policy_github_finish_workflow_path,
+    ]
+    try:
+        util.validate_trusted_publishing_constraints(name, branch, workflow_paths)
+    except ValueError as error:
+        yield Divergence(str(error), repr((name, branch, workflow_paths)))
+
+
 @project_components("Project.version_pattern")
 def project_version_pattern(p: sql.Project) -> Divergences:
     """Check that version_pattern, if set, is a compilable regex."""
@@ -544,6 +642,12 @@ def project_version_pattern(p: sql.Project) -> Divergences:
         return True
 
     yield from divergences_predicate(okay, "value to be a valid regex or unset", p.version_pattern)
+
+
+@project_components("ReleasePolicy.vote_mode")
+def project_vote_mode(p: sql.Project) -> Divergences:
+    if (p.committee is not None) and p.committee.is_podling and (p.policy_vote_mode == sql.VoteMode.MANUAL):
+        yield Divergence("a podling vote mode other than manual", repr(p.policy_vote_mode.value))
 
 
 def projects(ps: Iterable[sql.Project]) -> AnnotatedDivergences:
@@ -585,9 +689,39 @@ async def quarantine_staging(data: db.Session) -> AsyncAnnotatedDivergences:
         )
 
 
+async def quarantines(data: db.Session) -> AsyncAnnotatedDivergences:
+    via = sql.validate_instrumented_attribute
+    statement = (
+        sqlalchemy.select(
+            via(sql.Quarantined.id),
+            via(sql.Quarantined.release_key),
+            via(sql.Quarantined.status),
+            via(sql.Quarantined.completed),
+            via(sql.Quarantined.prior_revision_key),
+            via(sql.Release.phase),
+        )
+        .outerjoin(sql.Release, via(sql.Release.key) == via(sql.Quarantined.release_key))
+        .order_by(via(sql.Quarantined.id))
+    )
+    for quarantined_id, release_key, status, completed, prior, phase in (await data.execute(statement)).all():
+        source = f"{release_key} quarantine {quarantined_id}"
+        unfinished = status in (sql.QuarantineStatus.STAGING, sql.QuarantineStatus.PENDING)
+        if (completed is not None) == unfinished:
+            divergence = Divergence(f"completed to match status {status.name}", repr(completed))
+            yield AnnotatedDivergence(["Quarantined.completed"], "quarantine_completed", source, divergence)
+        if unfinished and (phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT):
+            divergence = Divergence(f"a draft release when {status.name}", repr(phase))
+            yield AnnotatedDivergence(["Quarantined.status"], "quarantine_release", source, divergence)
+        if (prior is not None) and (not prior.startswith(f"{release_key} ")):
+            divergence = Divergence(f"a revision key of {release_key}", repr(prior))
+            yield AnnotatedDivergence(["Quarantined.prior_revision_key"], "quarantine_revision", source, divergence)
+
+
 def release(r: sql.Release, finalising: bool = False) -> AnnotatedDivergences:
     """Check that a release is valid."""
+    # yield from release_archived(r)
     yield from release_created(r)
+    yield from release_cycle(r)
     yield from release_download_path_suffix(r)
     yield from release_key(r)
     if (r.phase != sql.ReleasePhase.RELEASE) or (not finalising):
@@ -621,6 +755,12 @@ def release_components(
     return wrap
 
 
+@release_components("Release.archived", "Release.archive_source", "Release.is_archived")
+def release_archived(r: sql.Release) -> Divergences:
+    if ((r.archived is not None) or (r.archive_source is not None)) and (not r.is_archived):
+        yield Divergence("is_archived to be set with an archive date or source", repr(r.is_archived))
+
+
 @release_components("Release.created")
 def release_created(r: sql.Release) -> Divergences:
     """Check that the release created date is in the past."""
@@ -631,6 +771,17 @@ def release_created(r: sql.Release) -> Divergences:
 
     expected = "value to be in the past"
     yield from divergences_predicate(predicate, expected, r.created)
+
+
+@release_components("Release.cycle_key")
+def release_cycle(r: sql.Release) -> Divergences:
+    if not r.project:
+        return
+    try:
+        cycle = cycles.cycle_name_for_version(r.project, r.version)
+    except ValueError:
+        cycle = cycles.DEFAULT_CYCLE
+    yield from divergences(f"{r.project_key}-{cycle}", r.cycle_key)
 
 
 @release_components("Release.download_path_suffix")

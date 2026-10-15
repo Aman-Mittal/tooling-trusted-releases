@@ -25,6 +25,7 @@ import sqlalchemy.pool
 import sqlmodel
 
 import atr.db as db
+import atr.models.calver as calver
 import atr.models.results as results
 import atr.models.sql as sql
 import atr.validate as validate
@@ -93,13 +94,18 @@ def test_download_path_suffix(suffix: str | None, count: int) -> None:
 async def test_everything_audits_cross_record_consistency(sqlite_sessionmaker) -> None:
     async with sqlite_sessionmaker() as data:
         data.add(sql.Committee(key="proj", name="Proj"))
-        policy = sql.ReleasePolicy(download_path_suffix="/absolute", recipient_defaults={"vote": "dev@proj.apache.org"})
+        policy = sql.ReleasePolicy(
+            download_path_suffix="/absolute", recipient_defaults={"vote": "dev@proj.apache.org"}, min_hours=24
+        )
         data.add(sql.Project(key="proj", name="Apache Proj", committee_key="proj", release_policy=policy))
         data.add(sql.Project(key="gone", name="Apache Gone", committee_key="proj", status=sql.ProjectStatus.RETIRED))
         voting = {"vote_started": CREATED, "vote_mode": EMAIL, "voted_revision_number": "00001"}
         data.add(release(CANDIDATE, "1.0", current_vote_seq=1, **voting))
         data.add(release(PREVIEW, "2.0", current_vote_seq=3, vote_resolved=CREATED, **voting))
         data.add(release(DRAFT, "1.0", "gone"))
+        data.add(release(RELEASE, "0.6", archive_source=sql.ArchiveSource.MANUAL))
+        data.add(release(RELEASE, "0.7", cycle_key="proj-other"))
+        data.add(release(RELEASE, "0.8", is_archived=True))
         for version in ("0.5", "4.0", "5.0"):
             phase = RELEASE if (version == "0.5") else DRAFT
             data.add(release(phase, version, current_vote_seq=2, vote_started=CREATED))
@@ -141,19 +147,39 @@ async def test_everything_audits_cross_record_consistency(sqlite_sessionmaker) -
         data.add(task(5, finalise, queued, "3.3", "00001"))
         data.add(task(6, publish, completed, "3.3", "00001", result=unusable))
         data.add(task(7, publish, completed, "3.3", "00001", result=published))
-        data.add(task(8, validation, queued, "1.0", task_args={"quarantined_id": 1}))
-        data.add(task(9, validation, failed, "1.0", task_args={"quarantined_id": 2}, error="Failed"))
+        data.add(task(8, validation, queued, "4.0", task_args={"quarantined_id": 1}))
+        data.add(task(9, validation, failed, "4.0", task_args={"quarantined_id": 2}, error="Failed"))
         data.add(task(10, sql.TaskType.VOTE_INITIATE, failed, "5.0", task_args={"vote_seq": 6}, error="Failed"))
         data.add(task(11, sql.TaskType.VOTE_INITIATE, failed, "1.0", task_args={"vote_seq": "legacy"}, error="Failed"))
 
-        for quarantined_id in (1, 2, 3):
+        for quarantined_id, release_key, status, completed_at, prior in [
+            (1, "proj-4.0", sql.QuarantineStatus.PENDING, None, "proj-4.0 00001"),
+            (2, "proj-4.0", sql.QuarantineStatus.PENDING, None, None),
+            (3, "proj-4.0", sql.QuarantineStatus.PENDING, None, None),
+            (4, "proj-4.0", sql.QuarantineStatus.FAILED, None, None),
+            (5, "proj-1.0", sql.QuarantineStatus.STAGING, None, None),
+            (6, "proj-4.0", sql.QuarantineStatus.ACKNOWLEDGED, CREATED, "proj-1.0 00002"),
+        ]:
             data.add(
                 sql.Quarantined(
                     id=quarantined_id,
-                    release_key="proj-1.0",
+                    release_key=release_key,
                     asf_uid="alice",
-                    status=sql.QuarantineStatus.PENDING,
+                    status=status,
                     token=f"token{quarantined_id}",
+                    completed=completed_at,
+                    prior_revision_key=prior,
+                )
+            )
+        for ignore_id, checker_glob, message_glob in [(1, "atr.tasks.checks.*", None), (2, None, "^(unclosed")]:
+            data.add(
+                sql.CheckResultIgnore(
+                    id=ignore_id,
+                    asf_uid="alice",
+                    created=CREATED,
+                    project_key="proj",
+                    checker_glob=checker_glob,
+                    message_glob=message_glob,
                 )
             )
 
@@ -203,17 +229,50 @@ async def test_everything_audits_cross_record_consistency(sqlite_sessionmaker) -
         ("artifact_release_key", "proj 1.0 b.tar.gz"),
         ("artifact_signature", "proj 1.0 c.tar.gz"),
         ("artifact_signature", "proj 1.0 c.tar.gz"),
+        ("check_result_ignores", "proj ignore 2"),
         ("personal_access_token_owner", "token 3"),
         ("personal_access_token_owner", "token 4"),
         ("project_download_path_suffix", "proj"),
+        ("project_min_hours", "proj"),
         ("project_recipient_defaults", "proj"),
-        ("quarantine_pending", "proj-1.0 quarantine 2"),
-        ("quarantine_pending", "proj-1.0 quarantine 3"),
+        ("quarantine_completed", "proj-4.0 quarantine 4"),
+        ("quarantine_pending", "proj-4.0 quarantine 2"),
+        ("quarantine_pending", "proj-4.0 quarantine 3"),
+        ("quarantine_release", "proj-1.0 quarantine 5"),
+        ("quarantine_revision", "proj-4.0 quarantine 6"),
+        ("release_cycle", "proj-0.7"),
         ("release_finalise_publication", "proj 3.1 task 1"),
         ("release_finalise_publication", "proj 3.2 task 3"),
         ("release_project_active", "gone-1.0"),
         ("release_voted_revision", "proj-1.0"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("method", "calver_format", "cycle_match", "expected"),
+    [
+        pytest.param(sql.VersionMethod.CALVER, None, None, [], id="unset"),
+        pytest.param(sql.VersionMethod.CALVER, "(YY.MM).N", calver.cycle_regex("(YY.MM).N"), [], id="generated"),
+        pytest.param(sql.VersionMethod.CALVER, "YYYY.MM.DD", None, [], id="no-cycle-span"),
+        pytest.param(
+            sql.VersionMethod.CALVER, "(YY.MM).N", None, [repr(calver.cycle_regex("(YY.MM).N"))], id="stale-matcher"
+        ),
+        pytest.param(sql.VersionMethod.CALVER, "(YY.MM", None, ["a valid calver format"], id="invalid"),
+        pytest.param(
+            sql.VersionMethod.SEMVER,
+            "YYYY",
+            None,
+            ["calver_format to be unset when version_method is not calver"],
+            id="not-calver",
+        ),
+    ],
+)
+def test_project_calver_format(
+    method: sql.VersionMethod, calver_format: str | None, cycle_match: str | None, expected: list[str]
+) -> None:
+    project = sql.Project(key="proj", version_method=method, calver_format=calver_format, cycle_match=cycle_match)
+
+    assert [d.divergence.expected for d in validate.project_calver_format(project)] == expected
 
 
 @pytest.mark.parametrize(
@@ -243,6 +302,65 @@ def test_project_recipient_defaults(defaults: Any, expected: list[str]) -> None:
     project = sql.Project(key="proj", release_policy=sql.ReleasePolicy(recipient_defaults=defaults))
 
     assert [d.divergence.expected for d in validate.project_recipient_defaults(project)] == expected
+
+
+@pytest.mark.parametrize(
+    ("podling", "fields", "settings", "expected"),
+    [
+        pytest.param(False, {}, {}, [], id="defaults"),
+        pytest.param(False, {"security_contact": "security@proj.apache.org"}, {}, [], id="committee-contact"),
+        pytest.param(
+            False, {"security_contact": "security@example.org"}, {}, ["project_security_contact"], id="contact"
+        ),
+        pytest.param(False, {}, {"min_hours": 0}, [], id="zero-hours"),
+        pytest.param(False, {}, {"min_hours": 24}, ["project_min_hours"], id="short-hours"),
+        pytest.param(False, {}, {"rat_excludes_url": "https://example.org/x"}, ["project_fetch_urls"], id="rat-host"),
+        pytest.param(False, {}, {"start_vote_template_url": "http://apache.org/t"}, ["project_fetch_urls"], id="http"),
+        pytest.param(False, {}, {"github_vote_workflow_path": None}, [], id="null-paths"),
+        pytest.param(
+            False,
+            {},
+            {"github_finish_workflow_path": [".github/workflows/finish.yml"]},
+            ["project_trusted_publishing"],
+            id="paths-without-repository",
+        ),
+        pytest.param(False, {}, {"github_repository_branch": "main"}, ["project_trusted_publishing"], id="branch"),
+        pytest.param(False, {}, {"github_repository_name": "apache/x"}, ["project_trusted_publishing"], id="slash"),
+        pytest.param(
+            False,
+            {},
+            {"github_repository_name": "x", "github_compose_workflow_path": ["release.yml"]},
+            ["project_trusted_publishing"],
+            id="path-prefix",
+        ),
+        pytest.param(False, {}, {"vote_mode": sql.VoteMode.MANUAL}, [], id="manual"),
+        pytest.param(True, {}, {"vote_mode": sql.VoteMode.MANUAL}, ["project_vote_mode"], id="podling-manual"),
+    ],
+)
+def test_project_settings(podling: bool, fields: dict[str, Any], settings: dict[str, Any], expected: list[str]) -> None:
+    committee = sql.Committee(key="proj", is_podling=podling)
+    policy = sql.ReleasePolicy(**settings)
+    project = sql.Project(
+        key="proj", name="Apache Proj", committee_key="proj", committee=committee, release_policy=policy, **fields
+    )
+
+    assert [d.validator for d in validate.project(project)] == expected
+
+
+@pytest.mark.parametrize(
+    ("cycle_match", "version", "cycle_key", "count"),
+    [
+        pytest.param(None, "1.0", "proj-default", 0, id="no-matcher"),
+        pytest.param(r"^(\d+)\.\d+$", "2.5", "proj-2", 0, id="matched"),
+        pytest.param(r"^(\d+)\.\d+$", "legacy", "proj-default", 0, id="unmatched-default"),
+        pytest.param(r"^(\d+)\.\d+$", "2.5", "proj-default", 1, id="stale-cycle"),
+    ],
+)
+def test_release_cycle(cycle_match: str | None, version: str, cycle_key: str, count: int) -> None:
+    candidate = release(RELEASE, version, cycle_key=cycle_key)
+    candidate.project = sql.Project(key="proj", cycle_match=cycle_match)
+
+    assert len(list(validate.release_cycle(candidate))) == count
 
 
 def test_release_project_active_without_project() -> None:
