@@ -17,14 +17,19 @@
 
 import asyncio
 import datetime
+import itertools
 import os
 import re
 from collections.abc import AsyncGenerator, Callable, Generator, Iterable, Sequence
 from typing import Final, NamedTuple, TypeVar
 
 import aiofiles.os
+import sqlalchemy
+import sqlalchemy.orm as orm
+import sqlmodel
 
 import atr.db as db
+import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
@@ -64,7 +69,27 @@ T = TypeVar("T")
 # Same ASF UID character set as principal.py
 _ASF_UID_PATTERN: Final = re.compile(r"^[-_a-z0-9]+$")
 
+_PHASE_VOTE_FIELDS: Final[dict[sql.ReleasePhase, tuple[tuple[str, ...], tuple[str, ...]]]] = {
+    sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT: (
+        (),
+        ("vote_mode", "vote_resolved", "podling_thread_id", "voted_revision_number", "vote_thread_url"),
+    ),
+    sql.ReleasePhase.RELEASE_CANDIDATE: (("vote_started", "vote_mode"), ("vote_resolved", "vote_thread_url")),
+    sql.ReleasePhase.RELEASE_PREVIEW: (("vote_started", "vote_resolved", "vote_mode"), ()),
+}
+
 _QUARANTINE_STAGING_MINUTES: Final = 5
+
+_RECIPIENT_ACTIONS: Final = frozenset(action.value for action in sql.RecipientAction)
+
+_SHA3_256_PATTERN: Final = re.compile(r"[0-9a-f]{64}")
+
+_VOTE_FIELD_PREREQUISITES: Final = {
+    "current_vote_seq": ("vote_started",),
+    "voted_revision_number": ("current_vote_seq", "vote_started", "vote_mode"),
+}
+
+_VOTING_PHASES: Final = frozenset({sql.ReleasePhase.RELEASE_CANDIDATE, sql.ReleasePhase.RELEASE_PREVIEW})
 
 if True:
 
@@ -103,6 +128,46 @@ if True:
             return replacement
 
         return wrap
+
+
+async def allocation_counters(data: db.Session) -> AsyncAnnotatedDivergences:
+    statements = (("RevisionCounter", _revision_allocations()), ("VoteCounter", _vote_allocations()))
+    for counter, statement in statements:
+        for release_key, allocated, last in (await data.execute(statement)).all():
+            if (last is None) or (last < allocated):
+                yield AnnotatedDivergence(
+                    [f"{counter}.last_allocated_number"],
+                    "allocation_counters",
+                    release_key,
+                    Divergence(f"at least {allocated}", repr(last)),
+                )
+
+
+async def artifacts(data: db.Session) -> AsyncAnnotatedDivergences:
+    via = sql.validate_instrumented_attribute
+    statement = sqlalchemy.select(
+        via(sql.Artifact.project_key),
+        via(sql.Artifact.version),
+        via(sql.Artifact.artifact_path),
+        via(sql.Artifact.release_key),
+        via(sql.Artifact.key_fingerprint),
+        via(sql.Artifact.signature_path),
+        via(sql.Artifact.signature_sha3_256),
+    )
+    for project_key, version, path, release_key, fingerprint, signature_path, digest in (
+        await data.execute(statement)
+    ).all():
+        source = f"{project_key} {version} {path}"
+        expected_key = sql.release_key(project_key, version)
+        if (release_key is not None) and (release_key != expected_key):
+            divergence = Divergence(repr(expected_key), repr(release_key))
+            yield AnnotatedDivergence(["Artifact.release_key"], "artifact_release_key", source, divergence)
+        if ((fingerprint is not None) or (digest is not None)) and (signature_path is None):
+            divergence = Divergence("signature_path to be set with a signer or digest", "None")
+            yield AnnotatedDivergence(["Artifact.signature_path"], "artifact_signature", source, divergence)
+        if (digest is not None) and (not _SHA3_256_PATTERN.fullmatch(digest)):
+            divergence = Divergence("64 lowercase hexadecimal digits", repr(digest))
+            yield AnnotatedDivergence(["Artifact.signature_sha3_256"], "artifact_signature", source, divergence)
 
 
 def committee(c: sql.Committee) -> AnnotatedDivergences:
@@ -271,7 +336,7 @@ def divergences_with_annotations(
 async def everything(data: db.Session) -> AsyncAnnotatedDivergences:
     """Yield divergences for all projects and releases in the DB."""
     committees_sorted = await data.committee(_child_committees=True).order_by(sql.Committee.key).all()
-    projects_sorted = await data.project(_distribution_channels=True).order_by(sql.Project.key).all()
+    projects_sorted = await data.project(_release_policy=True).order_by(sql.Project.key).all()
     releases_sorted = await data.release().order_by(sql.Release.key).all()
     finalising_releases = await _finalising_releases(data)
 
@@ -284,8 +349,35 @@ async def everything(data: db.Session) -> AsyncAnnotatedDivergences:
     for r in await asyncio.to_thread(releases, releases_sorted, finalising_releases):
         yield r
 
-    async for q in quarantine_staging(data):
-        yield q
+    for checks in (
+        allocation_counters,
+        artifacts,
+        personal_access_tokens,
+        quarantine_pending,
+        quarantine_staging,
+        release_finalise_publication,
+    ):
+        async for divergence in checks(data):
+            yield divergence
+
+
+async def personal_access_tokens(data: db.Session) -> AsyncAnnotatedDivergences:
+    via = sql.validate_instrumented_attribute
+    statement = sqlmodel.select(
+        via(sql.PersonalAccessToken.id),
+        via(sql.PersonalAccessToken.is_system),
+        via(sql.PersonalAccessToken.asfuid),
+        via(sql.PersonalAccessToken.created_by),
+    ).order_by(via(sql.PersonalAccessToken.id))
+    for token_id, is_system, asfuid, created_by in (await data.execute(statement)).all():
+        expected = None if is_system else created_by
+        if asfuid != expected:
+            yield AnnotatedDivergence(
+                ["PersonalAccessToken.asfuid", "PersonalAccessToken.is_system"],
+                "personal_access_token_owner",
+                f"token {token_id}",
+                Divergence(repr(expected), repr(asfuid)),
+            )
 
 
 def project(p: sql.Project) -> AnnotatedDivergences:
@@ -296,9 +388,11 @@ def project(p: sql.Project) -> AnnotatedDivergences:
     yield from project_created(p)
     yield from project_created_by(p)
     yield from project_cycle_match(p)
+    yield from project_download_path_suffix(p)
     yield from project_full_name(p)
     yield from project_key(p)
     yield from project_programming_languages(p)
+    yield from project_recipient_defaults(p)
     yield from project_version_pattern(p)
 
 
@@ -370,6 +464,12 @@ def project_cycle_match(p: sql.Project) -> Divergences:
     yield from divergences_predicate(okay, "value to be a regex with a capture group, or unset", p.cycle_match)
 
 
+@project_components("ReleasePolicy.download_path_suffix")
+def project_download_path_suffix(p: sql.Project) -> Divergences:
+    if p.release_policy is not None:
+        yield from _download_path_suffix(p.release_policy.download_path_suffix)
+
+
 @project_components("Project.name")
 def project_full_name(p: sql.Project) -> Divergences:
     """Check that the project full_name is present and starts with 'Apache '."""
@@ -411,6 +511,25 @@ def project_programming_languages(p: sql.Project) -> Divergences:
     yield from divergences_predicate(okay, expected, p.programming_languages)
 
 
+@project_components("ReleasePolicy.recipient_defaults")
+def project_recipient_defaults(p: sql.Project) -> Divergences:
+    if p.release_policy is None:
+        return
+    defaults = p.release_policy.recipient_defaults
+    if not isinstance(defaults, dict):
+        yield Divergence("a mapping of actions to recipients", repr(defaults))
+        return
+    for action, entry in defaults.items():
+        if (action not in _RECIPIENT_ACTIONS) or (not _recipients_shaped(entry)):
+            yield Divergence("vote or announce recipients with to, cc, and bcc", repr({action: entry}))
+            continue
+        addresses = [address for address in (entry["to"], *entry["cc"], *entry["bcc"]) if address]
+        try:
+            validation.validate_announce_recipients(addresses)
+        except ValueError:
+            yield Divergence(f"{action} recipients on apache.org or a subdomain", repr(addresses))
+
+
 @project_components("Project.version_pattern")
 def project_version_pattern(p: sql.Project) -> Divergences:
     """Check that version_pattern, if set, is a compilable regex."""
@@ -433,6 +552,23 @@ def projects(ps: Iterable[sql.Project]) -> AnnotatedDivergences:
         yield from project(p)
 
 
+async def quarantine_pending(data: db.Session) -> AsyncAnnotatedDivergences:
+    via = sql.validate_instrumented_attribute
+    validation_task = sqlmodel.select(via(sql.Task.id)).where(
+        via(sql.Task.task_type) == sql.TaskType.QUARANTINE_VALIDATE,
+        via(sql.Task.status).in_([sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE]),
+        sqlalchemy.func.json_extract(via(sql.Task.task_args), "$.quarantined_id") == via(sql.Quarantined.id),
+    )
+    query = data.quarantined(status=sql.QuarantineStatus.PENDING).where(~validation_task.exists())
+    for q in await query.order_by(via(sql.Quarantined.id)).all():
+        yield AnnotatedDivergence(
+            ["Quarantined.status"],
+            "quarantine_pending",
+            f"{q.release_key} quarantine {q.id}",
+            Divergence("PENDING with a queued or active validation task", "no such task"),
+        )
+
+
 async def quarantine_staging(data: db.Session) -> AsyncAnnotatedDivergences:
     via = sql.validate_instrumented_attribute
     cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=_QUARANTINE_STAGING_MINUTES)
@@ -452,13 +588,18 @@ async def quarantine_staging(data: db.Session) -> AsyncAnnotatedDivergences:
 def release(r: sql.Release, finalising: bool = False) -> AnnotatedDivergences:
     """Check that a release is valid."""
     yield from release_created(r)
+    yield from release_download_path_suffix(r)
     yield from release_key(r)
     if (r.phase != sql.ReleasePhase.RELEASE) or (not finalising):
         yield from release_on_disk(r)
     yield from release_package_managers(r)
+    yield from release_project_active(r)
     yield from release_released(r)
     yield from release_sboms(r)
+    yield from release_vote_fields(r)
     yield from release_vote_logic(r)
+    yield from release_vote_prerequisites(r)
+    yield from release_voted_revision(r)
 
 
 def release_components(
@@ -490,6 +631,44 @@ def release_created(r: sql.Release) -> Divergences:
 
     expected = "value to be in the past"
     yield from divergences_predicate(predicate, expected, r.created)
+
+
+@release_components("Release.download_path_suffix")
+def release_download_path_suffix(r: sql.Release) -> Divergences:
+    yield from _download_path_suffix(r.download_path_suffix)
+
+
+async def release_finalise_publication(data: db.Session) -> AsyncAnnotatedDivergences:
+    via = sql.validate_instrumented_attribute
+    publish = orm.aliased(sql.Task)
+    publication = sqlalchemy.and_(
+        via(publish.task_type) == sql.TaskType.SVN_PUBLISH,
+        via(publish.status) == sql.TaskStatus.COMPLETED,
+        via(publish.project_key) == via(sql.Task.project_key),
+        via(publish.version_key) == via(sql.Task.version_key),
+        via(publish.revision_number) == via(sql.Task.revision_number),
+    )
+    statement = (
+        sqlalchemy.select(
+            via(sql.Task.id),
+            via(sql.Task.project_key),
+            via(sql.Task.version_key),
+            via(sql.Task.revision_number),
+            via(publish.result),
+        )
+        .outerjoin(publish, publication)
+        .where(via(sql.Task.task_type) == sql.TaskType.RELEASE_FINALISE)
+        .order_by(via(sql.Task.id))
+    )
+    rows = (await data.execute(statement)).all()
+    for (task_id, project_key, version_key, revision), group in itertools.groupby(rows, key=lambda row: row[:4]):
+        if not any(isinstance(row[4], results.SvnPublish) for row in group):
+            yield AnnotatedDivergence(
+                ["Task.task_type"],
+                "release_finalise_publication",
+                f"{project_key} {version_key} task {task_id}",
+                Divergence(f"a usable completed SVN publication of revision {revision}", "none recorded"),
+            )
 
 
 @release_components("Release.key")
@@ -530,6 +709,12 @@ def release_package_managers(r: sql.Release) -> Divergences:
     yield from divergences(expected, actual)
 
 
+@release_components("Release.phase", "Project.status")
+def release_project_active(r: sql.Release) -> Divergences:
+    if r.phase != sql.ReleasePhase.RELEASE:
+        yield from divergences(sql.ProjectStatus.ACTIVE.value, r.project.status.value if r.project else None)
+
+
 @release_components("Release.released")
 def release_released(r: sql.Release) -> Divergences:
     """Check that the release released date is in the past or None."""
@@ -552,6 +737,19 @@ def release_sboms(r: sql.Release) -> Divergences:
     yield from divergences(expected, actual)
 
 
+@release_components("Release.phase")
+def release_vote_fields(r: sql.Release) -> Divergences:
+    required, cleared = _PHASE_VOTE_FIELDS.get(r.phase, ((), ()))
+    for name in required:
+        if (name == "vote_resolved") and (r.current_vote_seq is None):
+            continue
+        if getattr(r, name) is None:
+            yield Divergence(f"{name} to be set in {r.phase.value}", "None")
+    for name in cleared:
+        if (value := getattr(r, name)) is not None:
+            yield Divergence(f"{name} to be unset in {r.phase.value}", repr(value))
+
+
 @release_components("Release.vote_started", "Release.vote_resolved")
 def release_vote_logic(r: sql.Release) -> Divergences:
     """Check that the release vote logic is valid."""
@@ -572,6 +770,22 @@ def release_vote_logic(r: sql.Release) -> Divergences:
     yield from divergences_predicate(okay, expected, actual)
 
 
+@release_components("Release.current_vote_seq", "Release.voted_revision_number")
+def release_vote_prerequisites(r: sql.Release) -> Divergences:
+    for name, prerequisites in _VOTE_FIELD_PREREQUISITES.items():
+        if getattr(r, name) is None:
+            continue
+        for prerequisite in prerequisites:
+            if getattr(r, prerequisite) is None:
+                yield Divergence(f"{prerequisite} to be set with {name}", "None")
+
+
+@release_components("Release.voted_revision_number")
+def release_voted_revision(r: sql.Release) -> Divergences:
+    if (r.phase in _VOTING_PHASES) and (r.voted_revision_number is not None):
+        yield from divergences(r.latest_revision_number, r.voted_revision_number)
+
+
 def releases(
     rs: Iterable[sql.Release], finalising_releases: set[tuple[str, str]] | None = None
 ) -> AnnotatedDivergences:
@@ -589,6 +803,15 @@ async def _consistency_database_dirs(releases: Sequence[sql.Release]) -> list[st
             continue
         database_dirs.append(str(path))
     return database_dirs
+
+
+def _download_path_suffix(suffix: str | None) -> Divergences:
+    if suffix is None:
+        return
+    try:
+        validation.validate_download_path_suffix(suffix)
+    except ValueError:
+        yield Divergence("a valid download path suffix", repr(suffix))
 
 
 async def _finalising_releases(data: db.Session) -> set[tuple[str, str]]:
@@ -648,3 +871,52 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
                     version_dir_path = os.path.join(project_dir_path, version_dir)
                     if await aiofiles.os.path.isdir(version_dir_path):
                         filesystem_dirs.append(version_dir_path)
+
+
+def _recipients_shaped(entry: object) -> bool:
+    if (not isinstance(entry, dict)) or (set(entry) != {"bcc", "cc", "to"}):
+        return False
+    lists = (entry["cc"], entry["bcc"])
+    if (not isinstance(entry["to"], str)) or (not all(isinstance(addresses, list) for addresses in lists)):
+        return False
+    return all(isinstance(address, str) for addresses in lists for address in addresses)
+
+
+def _revision_allocations() -> sqlalchemy.Select:
+    via = sql.validate_instrumented_attribute
+    return (
+        sqlalchemy.select(
+            via(sql.Revision.release_key),
+            sqlalchemy.func.max(via(sql.Revision.seq)),
+            via(sql.RevisionCounter.last_allocated_number),
+        )
+        .outerjoin(sql.RevisionCounter, via(sql.RevisionCounter.release_key) == via(sql.Revision.release_key))
+        .group_by(via(sql.Revision.release_key), via(sql.RevisionCounter.last_allocated_number))
+    )
+
+
+def _vote_allocations() -> sqlalchemy.Select:
+    via = sql.validate_instrumented_attribute
+    serials = sqlalchemy.union_all(
+        sqlalchemy.select(via(sql.Release.key).label("release_key"), via(sql.Release.current_vote_seq).label("serial")),
+        sqlalchemy.select(via(sql.BallotPaper.release_key), via(sql.BallotPaper.vote_seq)),
+        sqlalchemy.select(
+            via(sql.Task.project_key) + "-" + via(sql.Task.version_key),
+            sqlalchemy.func.json_extract(via(sql.Task.task_args), "$.vote_seq"),
+        ).where(
+            via(sql.Task.task_type) == sql.TaskType.VOTE_INITIATE,
+            sqlalchemy.func.json_type(via(sql.Task.task_args), "$.vote_seq") == "integer",
+        ),
+    ).subquery()
+    return (
+        sqlalchemy.select(
+            serials.c.release_key,
+            sqlalchemy.func.max(serials.c.serial),
+            via(sql.VoteCounter.last_allocated_number),
+        )
+        .select_from(serials)
+        .join(sql.Release, via(sql.Release.key) == serials.c.release_key)
+        .outerjoin(sql.VoteCounter, via(sql.VoteCounter.release_key) == serials.c.release_key)
+        .where(serials.c.serial.is_not(None), via(sql.Release.phase) != sql.ReleasePhase.RELEASE)
+        .group_by(serials.c.release_key, via(sql.VoteCounter.last_allocated_number))
+    )

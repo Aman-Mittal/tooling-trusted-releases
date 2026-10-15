@@ -281,12 +281,39 @@ The [`release`](/ref/atr/validate.py) (release) function checks:
 
 * `created` timestamp must be in the past
 * `name` must match the expected pattern for project and version
-* Release directory must exist on disk and contain files
+* A draft's latest revision directory must exist, and a candidate's or preview's must not be empty
+* A released version must have no unfinished directory, except while its finalisation task is queued or active
 * `package_managers` must be empty (not used)
 * `released` timestamp must be in the past or None
 * `sboms` must be empty (not used)
 * Vote logic must be consistent (cannot have `vote_resolved` without `vote_started`)
-* `votes` must be empty (not used)
+
+### Stored consistency checks
+
+These checks find stored records that disagree with each other, and stored settings that ATR cannot use. Some write paths do not enforce these rules, as noted below. The checks report problems without blocking any action.
+
+| Rule | Validator | Source |
+| --- | --- | --- |
+| A draft has no vote mode, resolution time, podling thread, voted revision, or vote thread URL. A failed or cancelled vote may leave its start time and vote serial number behind. | [`release_vote_fields`](/ref/atr/validate.py) | [`_resolve_transition`](/ref/atr/storage/writers/vote.py) |
+| A candidate has a vote start time and mode, but no resolution time or vote thread URL. A preview has a start time and a mode, and also a resolution time if it has a vote serial number. A release catalogued from the distribution area may have no vote fields at all. | [`release_vote_fields`](/ref/atr/validate.py) | [`start_vote_no_commit`](/ref/atr/storage/writers/release.py), [`_resolve_transition`](/ref/atr/storage/writers/vote.py) |
+| A vote serial number requires a vote start time. A voted revision requires a vote serial number, a start time, and a mode. Releases that voted before ATR recorded vote serial numbers or voted revisions may lack them. | [`release_vote_prerequisites`](/ref/atr/validate.py) | [`start_vote_no_commit`](/ref/atr/storage/writers/release.py) |
+| A candidate's or preview's voted revision, when recorded, is still its latest revision. | [`release_voted_revision`](/ref/atr/validate.py) | [`start_vote_no_commit`](/ref/atr/storage/writers/release.py) |
+| A draft, candidate, or preview belongs to an active project. Admins can retire a project that has such releases, which leaves them unable to progress. | [`release_project_active`](/ref/atr/validate.py) | [`ensure_project_active`](/ref/atr/storage/__init__.py) |
+| Release and policy download path suffixes are valid paths after filling in their template variables. An unset release suffix uses the policy suffix, and an empty one means the distribution root. Both are valid. | [`release_download_path_suffix`](/ref/atr/validate.py), [`project_download_path_suffix`](/ref/atr/validate.py) | [`validate_download_path_suffix`](/ref/atr/models/validation.py) |
+| Recipient defaults have only `vote` and `announce` entries. Each has a `to` string and `cc` and `bcc` lists of strings, and every address is on `apache.org` or one of its subdomains. The web forms and policy API do not check these addresses when saving them. An entry with an empty `to` and empty lists is allowed. | [`project_recipient_defaults`](/ref/atr/validate.py) | [`_set_recipient_defaults`](/ref/atr/storage/writers/policy.py), [`_validate_recipient`](/ref/atr/mail.py) |
+| Each release finalisation task has a completed SVN publication task for the same project, version, and revision. That task has a valid stored result that records the SVN revision. This only audits the task records. Finalisation itself verifies the published files. | [`release_finalise_publication`](/ref/atr/validate.py) | [`release`](/ref/atr/storage/writers/announce.py) |
+| A pending quarantine has a queued or active validation task. Without one, the upload stays pending and blocks the vote. | [`quarantine_pending`](/ref/atr/validate.py) | [`create_revision_with_quarantine`](/ref/atr/storage/writers/revision.py) |
+| Each release's revision counter is at least its highest revision sequence number. For a draft, candidate, or preview, the vote counter is at least the highest vote serial number on the release, its ballots, or its vote initiation tasks. Gaps are allowed, and so are counters that outlive their release. | [`allocation_counters`](/ref/atr/validate.py) | [`populate_revision_sequence_and_key`](/ref/atr/models/sql.py), [`start_vote_no_commit`](/ref/atr/storage/writers/release.py) |
+| An artifact's release key, if set, matches its project and version. A recorded signer or signature digest requires a signature path, and a digest is 64 lowercase hexadecimal digits. | `artifact_release_key`, `artifact_signature` in [`artifacts`](/ref/atr/validate.py) | [`release`](/ref/atr/storage/writers/announce.py), [`catalogue_release`](/ref/atr/storage/writers/release.py) |
+| A system token has no owner, and an ordinary token's owner is its creator. | `personal_access_token_owner` in [`personal_access_tokens`](/ref/atr/validate.py) | [`tokens.py`](/ref/atr/storage/writers/tokens.py) |
+
+Some rules depend on who is acting or on the moment of the request, so stored records cannot show whether they held. ATR enforces these only when the action happens:
+
+* Starting a vote or announcing a release proceeds only if the phase and latest revision still match the request. Resolving a vote checks the phase and vote serial number in the same way. Publishing rechecks the latest revision under a write lock. A stale request cannot move a release on.
+* A vote can start only when no checks are queued or running, no upload is waiting in quarantine, there are no blockers, the draft has at least one file, and the required concern groups are acknowledged. See [Vote initiation](#vote-initiation).
+* The permitted vote and announce recipients depend on the acting user, the committee and its mailing lists, the project's stored defaults, the `ATR_STATUS` setting, and the podling vote round. See `permitted_voting_recipients` and `permitted_announce_recipients` in [`util.py`](/ref/atr/util.py).
+* An announcement requires a completed SVN publication of the exact preview revision, a recorded distribution for every file tag mapping, and an unchanged subject template. ATR also checks that the published files are available from the download server. If the server cannot be checked, the release manager can acknowledge this and continue, but missing or blocked files always stop the announcement. See the [announcement writer](/ref/atr/storage/writers/announce.py).
+* Only the `.asf.yaml` route requires vote recipients on the committee's own `apache.org` subdomain. See [`ProjectConfigArgs`](/ref/atr/models/api.py).
 
 ### Running validation
 
