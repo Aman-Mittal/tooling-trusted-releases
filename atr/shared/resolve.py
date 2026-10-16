@@ -82,7 +82,7 @@ class SubmitForm(ResolveFormBase):
     security_override: form.Bool = form.label(
         "Force as the ASF Security Team",
         "Resolve this vote regardless of the vote count and voting period. This action is audited."
-        " Automatic SVN publishing and automatic second round resolution are not applied.",
+        " Passed releases are published to SVN automatically. Automatic second round resolution is not applied.",
     )
     automatic_resolve_when_finished: form.Bool = form.label(
         "Automatically resolve the second round vote",

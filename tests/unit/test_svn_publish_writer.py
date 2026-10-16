@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import contextlib
 import datetime
 import unittest.mock as mock
 from collections.abc import AsyncIterator
@@ -96,6 +97,32 @@ async def test_publish_to_svn_allows_retry_after_malformed_completed_task(
         )
 
         assert retry.status == sql.TaskStatus.QUEUED
+
+
+@pytest.mark.parametrize(
+    ("writer_cls", "expectation"),
+    [
+        (release_writer.ReleaseManager, pytest.raises(storage.AccessError, match="Not authorized")),
+        (release_writer.SecurityTeam, contextlib.nullcontext()),
+    ],
+)
+async def test_publish_to_svn_embargo_check_exempts_only_security_team(
+    sqlite_sessionmaker, monkeypatch: pytest.MonkeyPatch, writer_cls, expectation
+) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", INTERNAL_PUBLISH_URL, raising=False)
+    async with sqlite_sessionmaker() as data:
+        await _seed_preview_release(data, expedited=True)
+        writer = _release_writer(data, writer_cls)
+        writer._ReleaseManager__write = storage.Write(SimpleNamespace(is_member_of=lambda key: key == "security"), data)
+
+        with expectation:
+            task = await writer.publish_to_svn(
+                safe.ProjectKey("project"),
+                safe.VersionKey("1.0.0"),
+                safe.RevisionNumber("00001"),
+                None,
+            )
+            assert task.status == sql.TaskStatus.QUEUED
 
 
 async def test_publish_to_svn_enqueues_task(sqlite_sessionmaker, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -396,8 +423,10 @@ def _publish_task(*, status: sql.TaskStatus) -> sql.Task:
     )
 
 
-def _release_writer(data: db.Session) -> release_writer.ReleaseManager:
-    writer = object.__new__(release_writer.ReleaseManager)
+def _release_writer(
+    data: db.Session, writer_cls: type[release_writer.ReleaseManager] = release_writer.ReleaseManager
+) -> release_writer.ReleaseManager:
+    writer = object.__new__(writer_cls)
     writer._ReleaseManager__asf_uid = "alice"
     writer._ReleaseManager__data = data
     writer._ReleaseManager__write_as = SimpleNamespace(append_to_audit_log=mock.Mock())
@@ -405,7 +434,9 @@ def _release_writer(data: db.Session) -> release_writer.ReleaseManager:
     return writer
 
 
-async def _seed_preview_release(data: db.Session, *, voted_revision_number: str | None = None) -> None:
+async def _seed_preview_release(
+    data: db.Session, *, voted_revision_number: str | None = None, expedited: bool = False
+) -> None:
     committee = sql.Committee(
         key="project",
         name="Project",
@@ -421,6 +452,7 @@ async def _seed_preview_release(data: db.Session, *, voted_revision_number: str 
         project_key=project.key,
         version="1.0.0",
         created=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        expedited=expedited,
         voted_revision_number=voted_revision_number,
         vote_thread_url="https://lists.apache.org/thread/current",
     )

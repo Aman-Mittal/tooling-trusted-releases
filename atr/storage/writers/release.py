@@ -1274,7 +1274,8 @@ class ReleaseManager(CommitteeParticipant):
             )
         )
         storage.ensure_project_active(release.project)
-        self.__write.ensure_release_writable(release)
+        if not isinstance(self, SecurityTeam):
+            self.__write.ensure_release_writable(release)
         committee = release.project.committee
         if committee is None:
             raise storage.AccessError("Release has no committee - Invalid state", status=500)
@@ -1531,6 +1532,9 @@ class CommitteeMember(ReleaseManager):
             expedited=True,
             download_path_suffix=download_path_suffix,
         )
+
+
+class SecurityTeam(ReleaseManager): ...
 
 
 class FoundationAdmin(FoundationCommitter):

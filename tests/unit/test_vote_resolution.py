@@ -1160,6 +1160,37 @@ async def test_resolve_rejects_stale_email_vote_serial(monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("vote_result", ["passed", "failed", "cancelled"])
+@pytest.mark.parametrize("automatic_publish", [None, False, True])
+@pytest.mark.parametrize("vote_mode", [sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED])
+async def test_security_override_publishes_only_passed_votes(
+    monkeypatch: pytest.MonkeyPatch,
+    vote_mode: sql.VoteMode,
+    automatic_publish: bool | None,
+    vote_result: Literal["passed", "failed", "cancelled"],
+) -> None:
+    writer, _data, write_as = _security_override_writer(monkeypatch, vote_mode, automatic_publish)
+    writer._ReleaseManager__send_resolution = mock.AsyncMock(return_value=None)
+
+    _release, _round, success, _error = await writer.resolve(
+        _project_key(),
+        _version_key(),
+        vote_result,
+        "Chair",
+        "The vote has passed.",
+        expected_vote_seq=1,
+        expected_vote_mode=vote_mode,
+    )
+
+    published = [mock.call(_project_key(), "1.0.0", "00001", safe.RelPath("project-1.0.0"), publisher_asf_uid="rm")]
+    assert success == f"Vote marked as {vote_result}"
+    assert write_as.release.publish_to_svn.await_args_list == (published if (vote_result == "passed") else [])
+    writer._ReleaseManager__write.ensure_release_writable.assert_not_called()
+    assert write_as.append_to_audit_log.call_args_list[0].kwargs["security_override_requested"] is True
+    assert write_as.append_to_audit_log.call_args.kwargs["security_override"] is True
+
+
+@pytest.mark.asyncio
 async def test_security_override_request_audit_survives_mail_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     writer, data, write_as = _security_override_writer(monkeypatch)
     writer._ReleaseManager__send_resolution = mock.AsyncMock(side_effect=RuntimeError("mail relay down"))
@@ -1680,30 +1711,6 @@ async def test_trusted_resolve_passes_round_two_via_carried_ipmc_ballots(monkeyp
     )
 
 
-@pytest.mark.asyncio
-async def test_trusted_resolve_security_override_passes_embargoed_vote_early_without_ballots(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    writer, _data, write_as = _security_override_writer(monkeypatch)
-    writer._ReleaseManager__send_resolution = mock.AsyncMock(return_value=None)
-
-    _release, _round, success, _error = await writer.resolve(
-        _project_key(),
-        _version_key(),
-        "passed",
-        "Chair",
-        "The vote has passed.",
-        expected_vote_seq=1,
-        expected_vote_mode=sql.VoteMode.TRUSTED,
-    )
-
-    assert success == "Vote marked as passed"
-    writer._ReleaseManager__write.ensure_release_writable.assert_not_called()
-    write_as.release.publish_to_svn.assert_not_awaited()
-    assert write_as.append_to_audit_log.call_args_list[0].kwargs["security_override_requested"] is True
-    assert write_as.append_to_audit_log.call_args.kwargs["security_override"] is True
-
-
 def test_vote_end_get_returns_datetime_for_valid_task() -> None:
     """vote_end_get returns a UTC datetime for a valid VoteInitiate task."""
     task = _latest_vote_task()
@@ -2156,23 +2163,29 @@ def _resolve_handler():
 
 def _security_override_writer(
     monkeypatch: pytest.MonkeyPatch,
+    vote_mode: sql.VoteMode = sql.VoteMode.TRUSTED,
+    automatic_publish: bool | None = None,
 ) -> tuple[vote.SecurityTeam, mock.MagicMock, mock.MagicMock]:
     data = _mock_data()
     write_as = _mock_write_as()
     writer = vote.SecurityTeam(_security_owner_write(), write_as, data, "project")
 
     release = _candidate_release()
-    release.is_embargoed = True
-    release.expedited = True
-    release.vote_mode = sql.VoteMode.TRUSTED
-    release.effective_vote_mode = sql.VoteMode.TRUSTED
+    release.is_embargoed = vote_mode == sql.VoteMode.TRUSTED
+    release.expedited = release.is_embargoed
+    release.vote_mode = vote_mode
+    release.effective_vote_mode = vote_mode
     release.current_vote_seq = 1
+    release.download_path_suffix = "project-1.0.0"
     query = mock.MagicMock()
     query.demand = mock.AsyncMock(return_value=release)
     data.release = mock.MagicMock(return_value=query)
+    data.merge = mock.AsyncMock(return_value=release)
 
     vote_task = _latest_vote_task_with_end(24)
-    vote_task.task_args["automatic_publish_when_resolved"] = True
+    vote_task.task_args["initiator_id"] = "rm"
+    if automatic_publish is not None:
+        vote_task.task_args["automatic_publish_when_resolved"] = automatic_publish
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=vote_task))
     monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release, _asf_uid: False)
     monkeypatch.setattr(interaction, "effective_trusted_ballots", mock.AsyncMock(return_value=[]))

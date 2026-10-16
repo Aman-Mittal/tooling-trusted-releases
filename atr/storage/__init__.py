@@ -284,6 +284,7 @@ class WriteAsCommitteeAdmin(WriteAsCommitteeMember):
 class WriteAsSecurityTeam(WriteAs):
     def __init__(self, write: Write, data: db.Session, committee_key: str):
         warm = WriteAsReleaseManager(write, data, committee_key)
+        warm.release = writers.release.SecurityTeam(write, warm, data, committee_key)
         self.vote_resolve = writers.vote.SecurityTeam(write, warm, data, committee_key).resolve
 
 

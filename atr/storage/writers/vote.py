@@ -608,7 +608,7 @@ class ReleaseManager(CommitteeParticipant):
         ):
             raise storage.AccessError("The resolve form is stale, please refresh and try again", status=409)
 
-        latest_vote_task = await interaction.release_current_vote_task(release)
+        latest_vote_task = await interaction.release_current_vote_task(release, self.__data)
         if latest_vote_task is None:
             raise storage.AccessError("No vote task found, unable to send resolution message.", status=404)
         if release.committee is None:
@@ -857,7 +857,7 @@ class ReleaseManager(CommitteeParticipant):
                 project_key,
                 release.safe_version_key,
                 release.safe_latest_revision_number,
-                None if security_override else latest_vote_task,
+                latest_vote_task,
                 release,
             )
             if (voting_round == 2) and (release.podling_thread_id is not None):
@@ -1205,7 +1205,7 @@ class ReleaseManager(CommitteeParticipant):
                 project_key,
                 release.safe_version_key,
                 release.safe_latest_revision_number,
-                None if security_override else latest_vote_task,
+                latest_vote_task,
                 release,
             )
             if (voting_round == 2) and (release.podling_thread_id is not None):
@@ -1402,15 +1402,20 @@ class ReleaseManager(CommitteeParticipant):
         vote_task_with_publish_options: sql.Task | None,
         release: sql.Release,
     ) -> str | None:
+        security_override = isinstance(self, SecurityTeam)
         if vote_task_with_publish_options is None:
             return None
-        if not bool(vote_task_with_publish_options.task_args.get("automatic_publish_when_resolved", False)):
+        if (not security_override) and (
+            not bool(vote_task_with_publish_options.task_args.get("automatic_publish_when_resolved", False))
+        ):
             return None
         try:
             download_path_suffix_raw = vote_task_with_publish_options.task_args.get("download_path_suffix")
             download_path_suffix = (
                 safe.RelPath(download_path_suffix_raw) if isinstance(download_path_suffix_raw, str) else None
             )
+            if security_override:
+                download_path_suffix = construct.effective_download_path_suffix(release)
             publisher_asf_uid = vote_task_with_publish_options.task_args.get("automatic_publish_asf_uid")
             if not isinstance(publisher_asf_uid, str):
                 publisher_asf_uid = vote_task_with_publish_options.task_args.get("initiator_id")
