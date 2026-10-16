@@ -2109,14 +2109,17 @@ async def vote_resolve(
     # try:
     try:
         async with storage.write_as_project_release_manager(data.project, asf_uid) as warm:
+            release, resolution_body, fullname = await _vote_resolve_release_and_body(warm, data, asf_uid)
             # TODO: Get fullname and use instead of asf_uid
             # TODO: Add resolution templating to atr.construct
             _release, _voting_round, _success_message, _error_message = await warm.vote.resolve(
                 data.project,
                 data.version,
                 data.resolution,
-                asf_uid,
-                f"The vote {data.resolution}.",
+                fullname,
+                resolution_body,
+                expected_vote_seq=release.current_vote_seq,
+                expected_vote_mode=release.effective_vote_mode,
                 early_reason=data.early_reason,
             )
     except storage.AccessError as e:
@@ -2591,6 +2594,65 @@ def _stored_certificate_issuer_match(
     if parsed is None:
         return None
     return _matched_issuer_fingerprint(parsed, issuer_fingerprints, issuer_key_ids)
+
+
+async def _vote_resolve_release_and_body(
+    warm: storage.WriteAsReleaseManager, data: models.api.VoteResolveArgs, asf_uid: str
+) -> tuple[sql.Release, str, str]:
+    async with db.session() as db_data:
+        release = await db_data.release(
+            project_key=str(data.project),
+            version=str(data.version),
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            _project_release_policy=True,
+        ).get()
+    if (release is None) or user.embargo_hides_release(release, asf_uid, is_member=False):
+        raise storage.AccessError("Release not found", status=404)
+    if release.committee is None:
+        raise storage.AccessError(errors.RELEASE_NO_COMMITTEE, status=500)
+    fullname = await _ldap_fullname(asf_uid)
+    template = await construct.resolve_template(release.project, "finish_vote")
+    body = construct.finish_vote_body(
+        template.body,
+        {
+            "ATR_TALLY": await _vote_resolve_tally(warm, release),
+            "COMMITTEE": "Incubator" if release.podling_thread_id else release.committee.display_name,
+            "OUTCOME": "was cancelled" if (data.resolution == "cancelled") else data.resolution,
+            "PROJECT_NAME": release.project.short_display_name,
+            "VERSION": release.version,
+            "YOUR_ASF_ID": asf_uid,
+            "YOUR_FULL_NAME": fullname,
+        },
+    )
+    return release, body, fullname
+
+
+async def _vote_resolve_tally(warm: storage.WriteAsReleaseManager, release: sql.Release) -> str:
+    binding_label, non_binding_label = user.binding_terminology(interaction.trusted_vote_round(release))
+    thread_id = None
+    latest_vote_task = await interaction.release_current_vote_task(release)
+    if (latest_vote_task is not None) and (not release.expedited):
+        archive_url = await warm.cache.get_message_archive_url(
+            interaction.task_mid_get(latest_vote_task), interaction.task_recipient_get(latest_vote_task)
+        )
+        thread_id = archive_url.split("/")[-1] if archive_url else None
+    if (release.effective_vote_mode == sql.VoteMode.TRUSTED) and (release.current_vote_seq is not None):
+        ballots = await interaction.effective_trusted_ballots(release, release.current_vote_seq)
+        summary = await interaction.trusted_ballot_summary(release, ballots)
+        return tabulate.trusted_tally_block(
+            summary, binding_label, non_binding_label, thread_id=thread_id, podling_thread_id=release.podling_thread_id
+        )
+    if thread_id is None:
+        return ""
+    try:
+        committee = await tabulate.vote_committee(thread_id, release)
+        details = await tabulate.vote_details(committee, thread_id, release)
+    except (util.FetchError, ValueError) as e:
+        log.warning(f"Email tabulation unavailable for {release.key}: {e}")
+        return ""
+    return tabulate.email_tally_block(
+        details.votes, details.summary, thread_id, binding_label, non_binding_label, release.podling_thread_id
+    )
 
 
 async def _vote_start_subject_and_body(

@@ -1806,6 +1806,86 @@ def test_vote_resolution_bypass(
     assert interaction.vote_resolution_bypass(release, "admin") is expected
 
 
+@pytest.mark.parametrize(
+    ("vote_mode", "resolution", "outcome", "counts"),
+    [
+        (
+            sql.VoteMode.EMAIL,
+            "passed",
+            "passed",
+            "There were 3 binding votes.\n\nOf these binding votes, 3 were +1, 0 were -1, and 0 were 0.\n",
+        ),
+        (
+            sql.VoteMode.TRUSTED,
+            "failed",
+            "failed",
+            "There were 3 binding votes.\nBinding votes: +1: 3, 0: 0, -1: 0.\nNon-binding votes: +1: 0, 0: 0, -1: 1.",
+        ),
+        (sql.VoteMode.EMAIL, "cancelled", "was cancelled", None),
+    ],
+)
+@pytest.mark.asyncio
+async def test_vote_resolve_api_sends_tally(
+    monkeypatch: pytest.MonkeyPatch,
+    vote_mode: sql.VoteMode,
+    resolution: Literal["passed", "failed", "cancelled"],
+    outcome: str,
+    counts: str | None,
+) -> None:
+    release = _candidate_release()
+    release.vote_mode = vote_mode
+    release.effective_vote_mode = vote_mode
+    release.current_vote_seq = 7
+    release.project.policy_finish_vote_template = (
+        "{{YOUR_FULL_NAME}} ({{YOUR_ASF_ID}}): {{PROJECT_NAME}} {{VERSION}} {{OUTCOME}}.\n\n{{ATR_TALLY}}"
+    )
+    thread_url = "https://lists.apache.org/thread/0123456789abcdef0123456789abcdef"
+    db_data = mock.MagicMock()
+    db_data.release.return_value.get = mock.AsyncMock(return_value=release)
+    session = mock.MagicMock()
+    session.return_value.__aenter__.return_value = db_data
+    warm = mock.MagicMock()
+    warm.cache.get_message_archive_url = mock.AsyncMock(return_value=thread_url)
+    warm.vote.resolve = mock.AsyncMock(return_value=(release, None, "", None))
+    write = mock.MagicMock()
+    write.return_value.__aenter__.return_value = warm
+    vote_details = mock.AsyncMock(
+        return_value=SimpleNamespace(
+            votes={}, summary={**_empty_vote_summary(), "binding_votes": 3, "binding_votes_yes": 3}, passed=False
+        ),
+        side_effect=None if counts else ValueError("Invalid thread"),
+    )
+    trusted_summary = interaction.TrustedVoteSummary(binding_votes_yes=3, non_binding_votes_no=1)
+    monkeypatch.setattr(atr.api, "_jwt_asf_uid", lambda: "chair")
+    monkeypatch.setattr(atr.api, "_ldap_fullname", mock.AsyncMock(return_value="Project Chair"))
+    monkeypatch.setattr(atr.api.db, "session", session)
+    monkeypatch.setattr(atr.api.storage, "write_as_project_release_manager", write)
+    monkeypatch.setattr(
+        atr.api.interaction, "release_current_vote_task", mock.AsyncMock(return_value=_latest_vote_task())
+    )
+    monkeypatch.setattr(atr.api.interaction, "effective_trusted_ballots", mock.AsyncMock(return_value=[]))
+    monkeypatch.setattr(atr.api.interaction, "trusted_ballot_summary", mock.AsyncMock(return_value=trusted_summary))
+    monkeypatch.setattr(atr.api.tabulate, "vote_committee", mock.AsyncMock(return_value=release.committee))
+    monkeypatch.setattr(atr.api.tabulate, "vote_details", vote_details)
+
+    await inspect.unwrap(atr.api.vote_resolve)(
+        "vote/resolve",
+        SimpleNamespace(project="project", version="1.0.0", resolution=resolution, early_reason=""),
+    )
+
+    tally = f"The vote thread is archived at the following URL:\n\n{thread_url}\n\n{counts}" if counts else ""
+    warm.vote.resolve.assert_awaited_once_with(
+        "project",
+        "1.0.0",
+        resolution,
+        "Project Chair",
+        f"Project Chair (chair): Project 1.0.0 {outcome}.\n\n{tally}",
+        expected_vote_seq=7,
+        expected_vote_mode=vote_mode,
+        early_reason="",
+    )
+
+
 @pytest.mark.asyncio
 async def test_vote_tabulate_api_passes_trusted_receipt_exclusions(monkeypatch: pytest.MonkeyPatch) -> None:
     release = _candidate_release()

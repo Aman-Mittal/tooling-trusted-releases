@@ -130,7 +130,7 @@ When the result is clear, record it:
 atr vote resolve example 1.0.0 passed
 ```
 
-ATR replies to the vote thread and moves the release to the finish phase. The client's reply says only that the vote passed, so resolve on the website instead if you want the tally in the email. If the vote failed, use `failed`. The release returns to compose, where you can fix the files and start a fresh vote. To cancel a vote early, use the website.
+ATR replies to the vote thread, including the tally when available, and moves the release to the finish phase. If the vote failed, use `failed`. The release returns to compose, where you can fix the files and start a fresh vote. To cancel a vote early, use the website.
 
 ## Finish the release
 
