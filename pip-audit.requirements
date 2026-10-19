@@ -5,7 +5,7 @@ aiofiles==25.1.0
     #   tooling-trusted-releases
 aiohappyeyeballs==2.7.1
     # via aiohttp
-aiohttp==3.14.4
+aiohttp==3.14.5
     # via
     #   asfpy
     #   asfquart
@@ -108,7 +108,7 @@ ezt==1.1
     # via
     #   asfpy
     #   asfquart
-filelock==4.0.12
+filelock==4.1.2
     # via
     #   python-discovery
     #   virtualenv
@@ -153,7 +153,7 @@ idna==3.20
     #   jsonschema
     #   requests
     #   yarl
-ijson==3.5.1
+ijson==3.6.0
     # via tooling-trusted-releases
 isoduration==20.11.0
     # via jsonschema
@@ -169,11 +169,11 @@ jsbeautifier==2.0.3
     # via
     #   cssbeautifier
     #   djlint
-json5==0.16.0
+json5==0.17.3
     # via djlint
-jsonpatch==1.34
+jsonpatch==1.35
     # via tooling-trusted-releases
-jsonpointer==3.2.0
+jsonpointer==3.2.1
     # via
     #   jsonpatch
     #   jsonschema
@@ -202,7 +202,7 @@ markupsafe==3.0.4
     #   wtforms
 mdurl==0.1.2
     # via markdown-it-py
-multidict==6.9.1
+multidict==7.1.0
     # via
     #   aiohttp
     #   yarl
@@ -221,9 +221,9 @@ packaging==26.3
     #   virtualenv
 pathspec==1.1.1
     # via djlint
-platformdirs==4.12.4
+platformdirs==4.13.0
     # via virtualenv
-pre-commit==4.6.2
+pre-commit==4.7.0
 priority==2.0.0
     # via hypercorn
 propcache==0.5.4
@@ -240,14 +240,14 @@ pyasn1==0.6.4
     # via ldap3
 pycparser==3.11 ; implementation_name != 'PyPy'
     # via cffi
-pycryptodomex==3.24.0
+pycryptodomex==3.24.1
     # via ldap3
-pydantic==2.14.0
+pydantic==2.14.1
     # via
     #   pydantic-xml
     #   quart-schema
     #   sqlmodel
-pydantic-core==2.50.0
+pydantic-core==2.50.1
     # via
     #   pydantic
     #   pydantic-xml
@@ -264,7 +264,7 @@ python-dateutil==2.9.0.post0
     #   strictyaml
 python-decouple==3.8
     # via tooling-trusted-releases
-python-discovery==1.6.1
+python-discovery==1.6.2
     # via virtualenv
 pyyaml==6.0.3
     # via
@@ -314,7 +314,7 @@ rpds-py==2026.9.1
     #   referencing
 rpgp-py==0.20.0
     # via tooling-trusted-releases
-ruff==0.16.10
+ruff==0.17.0
 semver==3.1.0
     # via tooling-trusted-releases
 six==1.17.0
@@ -362,7 +362,7 @@ urllib3==2.8.0
     #   requests
 uvloop==0.23.0
     # via hypercorn
-virtualenv==21.14.6
+virtualenv==21.14.7
     # via pre-commit
 watchfiles==1.3.0
     # via
