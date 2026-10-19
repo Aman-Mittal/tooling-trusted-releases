@@ -240,6 +240,7 @@ async def test_everything_audits_cross_record_consistency(sqlite_sessionmaker) -
         ("quarantine_pending", "proj-4.0 quarantine 3"),
         ("quarantine_release", "proj-1.0 quarantine 5"),
         ("quarantine_revision", "proj-4.0 quarantine 6"),
+        ("release_archived", "proj-0.6"),
         ("release_cycle", "proj-0.7"),
         ("release_finalise_publication", "proj 3.1 task 1"),
         ("release_finalise_publication", "proj 3.2 task 3"),

@@ -719,7 +719,7 @@ async def quarantines(data: db.Session) -> AsyncAnnotatedDivergences:
 
 def release(r: sql.Release, finalising: bool = False) -> AnnotatedDivergences:
     """Check that a release is valid."""
-    # yield from release_archived(r)
+    yield from release_archived(r)
     yield from release_created(r)
     yield from release_cycle(r)
     yield from release_download_path_suffix(r)
