@@ -16,6 +16,7 @@
 # under the License.
 
 import datetime
+import os
 import pathlib
 import shutil
 import subprocess
@@ -433,6 +434,46 @@ def test_compare_trees_rsync_archive_has_extra_file(
 
     assert result.invalid == {rel_path}
     assert result.repo_only == set()
+
+
+@pytest.mark.skipif(shutil.which("rsync") is None, reason="rsync is not available")
+@pytest.mark.parametrize("name", ["member", ".member"])
+@pytest.mark.parametrize(
+    ("repo_entry", "archive_entry", "expected"),
+    [
+        ("-> a.txt", "-> a.txt", None),
+        ("-> missing", "-> missing", None),
+        ("-> a.txt", "-> ./a.txt", "invalid"),
+        ("-> missing", "-> other", "invalid"),
+        ("-> a.txt", None, "repo_only"),
+        (None, "-> d", "invalid"),
+        ("-> a.txt", "file", "invalid"),
+        ("file", "-> a.txt", "invalid"),
+        ("-> d", "dir", "invalid"),
+        ("dir", "-> d", "invalid"),
+    ],
+)
+def test_compare_trees_rsync_compares_symlinks(
+    tmp_path: pathlib.Path, name: str, repo_entry: str | None, archive_entry: str | None, expected: str | None
+) -> None:
+    temp_dir = safe.StatePath(tmp_path)
+    repo_dir = temp_dir / "repo"
+    archive_dir = temp_dir / "archive"
+    for root, entry in [(repo_dir.path, repo_entry), (archive_dir.path, archive_entry)]:
+        _make_tree(root, ["a.txt", "d/x"])
+        if entry == "file":
+            _make_tree(root, [name])
+        elif entry == "dir":
+            (root / name).mkdir()
+        elif entry is not None:
+            (root / name).symlink_to(entry.removeprefix("-> "))
+    if repo_entry == archive_entry:
+        os.utime(archive_dir.path / name, (0, 0), follow_symlinks=False)
+
+    result = atr.tasks.checks.compare._compare_trees_rsync(repo_dir, archive_dir)
+
+    assert result.invalid == ({name} if (expected == "invalid") else set())
+    assert result.repo_only == ({name} if (expected == "repo_only") else set())
 
 
 @pytest.mark.parametrize("rel_path", ["b.txt", ".asf.yaml", ".cargo/config.toml"])

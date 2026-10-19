@@ -56,7 +56,7 @@ _PERMITTED_ADDED_PATHS: Final[dict[str, list[str]]] = {
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["github_tp_sha"]
-CHECK_VERSION: Final[str] = "5"
+CHECK_VERSION: Final[str] = "6"
 
 
 @dataclasses.dataclass
@@ -324,10 +324,10 @@ def _compare_trees_rsync(repo_dir: safe.StatePath, archive_dir: safe.StatePath) 
             if len(parts) == 2:
                 flags = parts[0]
                 rel_path = parts[1].rstrip("/")
-                if (len(flags) >= 3) and (flags[1] == "f"):
-                    if (flags[0] == ">") and (flags[2] == "+"):
+                if (len(flags) >= 3) and (flags[1] in ("d", "f", "L")):
+                    if flags[2] == "+":
                         is_repo_only = True
-                    elif (flags[0] in (">", "<", "c")) and (flags[2] in ("c", "s", "+")):
+                    elif (flags[0] in (">", "<", "c")) and (flags[2] in ("c", "s")):
                         is_content_diff = True
         # rsync itemises the top of the tree as "./" when its timestamp differs, which isn't a file
         if (not rel_path) or (rel_path == "."):
@@ -335,11 +335,12 @@ def _compare_trees_rsync(repo_dir: safe.StatePath, archive_dir: safe.StatePath) 
         # Source tree members can contain dotfiles, but must stay within their respective trees
         full_repo = safe.StatePath(repo_dir.path / rel_path, root=repo_dir.path)
         full_archive = safe.StatePath(archive_dir.path / rel_path, root=archive_dir.path)
-        if full_repo.path.is_file() or full_archive.path.is_file():
-            if is_repo_only:
-                repo_only.add(rel_path)
-            elif is_content_diff:
-                invalid.add(rel_path)
+        if is_repo_only and full_archive.path.exists(follow_symlinks=False):
+            invalid.add(rel_path)
+        elif is_repo_only and (not full_repo.path.is_dir(follow_symlinks=False)):
+            repo_only.add(rel_path)
+        elif is_content_diff and (not full_archive.path.is_dir(follow_symlinks=False)):
+            invalid.add(rel_path)
     return TreeComparisonResult(invalid, repo_only)
 
 
