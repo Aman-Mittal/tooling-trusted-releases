@@ -21,6 +21,7 @@ import asyncio
 import contextlib
 import datetime
 import fcntl
+import json
 import logging
 import multiprocessing
 import os
@@ -81,6 +82,8 @@ import atr.web as web
 # TODO: Technically this is a global variable
 # We should probably find a cleaner way to do this
 app: base.QuartApp | None = None
+
+_CSP_REPORT_MAX_LENGTH: Final[int] = 65536
 
 # The order of these migrations must be checked carefully to avoid conflicts
 _MIGRATIONS: Final[list[tuple[str, str]]] = [
@@ -591,8 +594,11 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
         "base-uri 'none'",
         "form-action 'self'",
         "frame-ancestors 'none'",
+        "report-to csp",
     ]
     csp_header = "; ".join(csp_directives)
+    app.add_url_rule("/csp-report", view_func=_csp_report, methods=["POST"])
+    app.extensions["csrf"].exempt(_csp_report)
 
     permissions_policy = ", ".join(
         [
@@ -642,6 +648,7 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
             response.headers["Cache-Control"] = "no-store"
         response.headers["Content-Security-Policy"] = csp_header
         response.headers["Permissions-Policy"] = permissions_policy
+        response.headers["Reporting-Endpoints"] = 'csp="/csp-report"'
         # audit_guidance we set Cross-Origin-Opener-Policy: same-origin in our frontend proxy
         # audit_guidance we set Cross-Origin-Resource-Policy: same-origin in our frontend proxy
         # audit_guidance we set Referrer-Policy: same-origin in our frontend proxy
@@ -731,6 +738,26 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
             log.info("Blockbuster deactivated")
 
     return app
+
+
+@rate_limiter.rate_limit(60, datetime.timedelta(hours=1))
+async def _csp_report() -> quart.Response:
+    content_length = quart.request.content_length
+    if content_length is None:
+        return quart.Response(status=411)
+    if content_length > _CSP_REPORT_MAX_LENGTH:
+        return quart.Response(status=413)
+    data = await quart.request.get_data()
+    if len(data) > _CSP_REPORT_MAX_LENGTH:
+        return quart.Response(status=413)
+    try:
+        report = json.loads(data)
+    except ValueError:
+        return quart.Response(status=400)
+    if not isinstance(report, list):
+        return quart.Response(status=400)
+    log.warning("CSP violation report", report=report)
+    return quart.Response(status=204)
 
 
 def _enforce_archives_permissions(archives_dir: pathlib.Path) -> None:
