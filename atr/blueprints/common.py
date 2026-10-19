@@ -15,7 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import contextlib
 import dataclasses
+import functools
 import inspect
 import types
 import typing
@@ -55,6 +57,19 @@ VALIDATED_TYPES: Final[set[Any]] = {
     safe.VersionKey,
     unsafe.UnsafeStr,
 }
+
+
+def anonymous_embargo_probe(inner: Callable[..., Any], validated_params: list[tuple[str, type]]) -> Callable[..., Any]:
+    @functools.wraps(inner)
+    async def probe(*args: Any, **kwargs: Any) -> Any:
+        if await sessions.read() is None:
+            url_params = dict(kwargs)
+            with contextlib.suppress(base.ASFQuartException):
+                await validate_params(url_params, validated_params)
+                await confidential_release_block(url_params, validated_params, None, allow_asf_member=False)
+        return await inner(*args, **kwargs)
+
+    return probe
 
 
 async def authenticate() -> web.Committer:
@@ -203,7 +218,7 @@ async def confidential_release_block(
         return
     uid = session.uid if (session is not None) else None
     is_member = bool(allow_asf_member and (session is not None) and session.is_member)
-    if user.embargo_hides_release(release, uid, is_member=is_member):
+    if user.embargo_denies(release, uid, is_member=is_member):
         raise base.ASFQuartException(errors.RELEASE_NOT_FOUND, errorcode=404)
 
 

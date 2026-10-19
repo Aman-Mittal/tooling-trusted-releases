@@ -496,6 +496,8 @@ log.auth_event(event="pat_bulk_revoke", asfuid="akm", by="wave") # In this case,
 
 ```
 
+ATR records an `embargo_denied` event with the `release_key` whenever it refuses a request for an embargoed release that exists, whether the request was anonymous or came from an authenticated user who cannot view the release. This covers web pages, including an anonymous visit to a page that redirects to log in, the API, and SSH reads. Requests for releases that do not exist, embargoed releases left out of lists, refused writes, and ordinary authentication, CSRF, validation and rate limit failures are not recorded in this way, because they are usually routine. *Admin → Users → Embargo denials* shows the newest 250 denials from the last 30 days. Each denial also sends every administrator an admin notification about the release, which is not repeated until it is dismissed. The denied requester is never notified, because that would reveal that the release exists.
+
 ## Security properties
 
 ### Web sessions

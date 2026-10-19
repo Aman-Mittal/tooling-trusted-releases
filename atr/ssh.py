@@ -376,6 +376,7 @@ async def _step_01_handle_client(process: asyncssh.SSHServerProcess, server: SSH
 async def _step_02_handle_safely(process: asyncssh.SSHServerProcess, server: SSHServer) -> None:
     asf_uid = server._get_asf_uid(process)
     log.set_asf_uid(asf_uid)
+    log.add_context(source_ip=process.get_extra_info("peername")[0])
     log.info(f"Handling command for authenticated user: {asf_uid}")
 
     if not await ldap.is_active(asf_uid):
@@ -569,7 +570,7 @@ async def _step_06a_validate_read_permissions(
         raise RsyncArgsError(f"Release '{release.key}' is not in a readable phase ({release.phase.value})")
 
     if release.is_embargoed:
-        read_allowed = user.can_view_embargoed_release(project.committee, ssh_uid, is_member=False)
+        read_allowed = not user.embargo_denies(release, ssh_uid, is_member=False)
     else:
         read_allowed = user.is_committer(project.committee, ssh_uid)
     if not read_allowed:

@@ -27,7 +27,7 @@ import pathlib
 import statistics
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Annotated, Any, Final, Literal, NamedTuple
 
 import aiofiles.os
@@ -63,6 +63,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
 import atr.noisy as noisy
+import atr.paths as paths
 import atr.pgp as pgp
 import atr.principal as principal
 import atr.render as render
@@ -81,6 +82,8 @@ import atr.web as web
 ROUTES_MODULE: Final[Literal[True]] = True
 
 _CERTIFICATE_FINDING_RANK: Final[dict[str, int]] = {"signing-keys": 1, "metadata": 2}
+_EMBARGO_DENIAL_DAYS: Final = 30
+_EMBARGO_DENIAL_LIMIT: Final = 250
 _MAXIMUM_PERMITTED_AGE_DAYS: Final = datetime.timedelta(days=90)
 
 # Every table the data browser will show. This is the whole set on purpose - the
@@ -2637,6 +2640,32 @@ def _dist_rules_table(action_rows: list[tuple[sql.DistRule, htm.Element, htm.Ele
     return htpy.div[sections]
 
 
+def _embargo_denial_records(path: pathlib.Path, cutoff: str) -> Iterator[dict[str, Any]]:
+    with path.open("rb") as handle:
+        for line in handle:
+            if not line.endswith(b"\n"):
+                return
+            if b'"event":"embargo_denied"' not in line:
+                continue
+            record = json.loads(line)
+            if (record["logger"] != "atr.auth") or (record["event"].get("event") != "embargo_denied"):
+                continue
+            if record["timestamp"] >= cutoff:
+                yield record
+
+
+def _embargo_denials(cutoff: str) -> tuple[list[dict[str, Any]], int]:
+    directory = paths.get_audit_log_dir().path
+    days = [path for path in sorted(directory.glob("????-??-??.jsonl")) if path.stem >= cutoff[:10]]
+    denials: collections.deque[dict[str, Any]] = collections.deque(maxlen=_EMBARGO_DENIAL_LIMIT)
+    total = 0
+    for day in days:
+        for record in _embargo_denial_records(day, cutoff):
+            denials.append(record)
+            total += 1
+    return list(reversed(denials)), total
+
+
 async def _fetch_ongoing_tasks(
     _session: web.Committer,
     project_key: safe.ProjectKey,
@@ -3158,6 +3187,40 @@ async def _users_browse_as_tab() -> htm.Element:
     return htm.div[markupsafe.Markup(content)]
 
 
+async def _users_embargo_denials_tab() -> htm.Element:
+    since = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=_EMBARGO_DENIAL_DAYS)
+    cutoff = since.isoformat(timespec="microseconds").replace("+00:00", "Z")
+    denials, total = await asyncio.to_thread(_embargo_denials, cutoff)
+    tbody = htm.Block(htm.tbody)
+    for denial in denials:
+        event = denial["event"]
+        tbody.tr[
+            htm.td[util.format_datetime(datetime.datetime.fromisoformat(denial["timestamp"]))],
+            htm.td[htm.code[event["release_key"]]],
+            htm.td[event.get("request_user_id", "Anonymous")],
+            htm.td[event.get("admin_user_id", "")],
+            htm.td[event.get("source_ip", "")],
+            htm.td[event.get("request_id", "")],
+        ]
+    block = htm.Block()
+    block.h2["Embargo denials"]
+    block.p[
+        f"Requests refused access to an existing embargoed release in the last {_EMBARGO_DENIAL_DAYS} days,"
+        " newest first."
+    ]
+    if not denials:
+        block.div(".alert.alert-info")["No embargo denials were recorded in this period."]
+        return block.collect()
+    if total > len(denials):
+        block.p[f"Showing the newest {len(denials)} of {total} denials."]
+    labels = ["Time (UTC)", "Release", "User ID", "Admin", "IP address", "Request ID"]
+    table = htm.table(".table.table-sm.table-striped.table-bordered.text-nowrap")[
+        htm.thead[htm.tr[[htm.th[label] for label in labels]]], tbody.collect()
+    ]
+    block.append(htm.div(".table-responsive.atr-embargo-denials-scroll")[table])
+    return block.collect()
+
+
 async def _users_ldap_tab(lookup_form: LdapLookupForm | None) -> htm.Element:
     uid_query = None
     email_query = None
@@ -3229,6 +3292,7 @@ async def _users_page(
         htm.Tab("revoke-ssh-keys", "Revoke SSH keys", _users_revoke_ssh_keys_tab),
         htm.Tab("system-tokens", "System tokens", lambda: _users_system_tokens_tab(session)),
         htm.Tab("rotate-jwt", "Rotate JWT key", _users_rotate_jwt_tab),
+        htm.Tab("embargo-denials", "Embargo denials", _users_embargo_denials_tab),
     ]
     page = htm.Block()
     page.h1["Users"]

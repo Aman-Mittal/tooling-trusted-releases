@@ -1735,7 +1735,7 @@ async def sbom_generate(
     async with db.session() as db_data:
         release_key = sql.release_key(data.project, data.version)
         release = await db_data.release(project_key=str(data.project), version=str(data.version), _committee=True).get()
-    if (release is None) or user.embargo_hides_release(release, asf_uid, is_member=False):
+    if (release is None) or user.embargo_denies(release, asf_uid, is_member=False):
         raise exceptions.NotFound(f"Release {release_key} not found")
     if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
         raise exceptions.Conflict(f"Release {release_key} is not a candidate draft")
@@ -2062,7 +2062,7 @@ async def vote_cast(
     async with db.session() as db_data:
         release_key = sql.release_key(data.project, data.version)
         release = await db_data.release(project_key=str(data.project), version=str(data.version), _committee=True).get()
-    if (release is not None) and user.embargo_hides_release(release, asf_uid, is_member=False):
+    if (release is not None) and user.embargo_denies(release, asf_uid, is_member=False):
         raise exceptions.NotFound(f"Release {release_key} not found")
 
     fullname = await _ldap_fullname(asf_uid)
@@ -2256,7 +2256,7 @@ async def vote_tabulate(
             _committee=True,
         ).demand(exceptions.NotFound(f"Release {release_key} not found"))
 
-    if user.embargo_hides_release(release, _jwt_asf_uid(), is_member=False):
+    if user.embargo_denies(release, _jwt_asf_uid(), is_member=False):
         raise exceptions.NotFound(f"Release {release_key} not found")
 
     is_trusted = (release.effective_vote_mode == sql.VoteMode.TRUSTED) and (release.current_vote_seq is not None)
@@ -2459,7 +2459,7 @@ async def _match_committees_scoped(
             ).get()
             if release is None:
                 return []
-            if user.embargo_hides_release(release, asf_uid, is_member=False):
+            if user.embargo_denies(release, asf_uid, is_member=False):
                 return []
             release_dirs = [paths.release_directory(release)]
         else:
@@ -2606,7 +2606,7 @@ async def _vote_resolve_release_and_body(
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _project_release_policy=True,
         ).get()
-    if (release is None) or user.embargo_hides_release(release, asf_uid, is_member=False):
+    if (release is None) or user.embargo_denies(release, asf_uid, is_member=False):
         raise storage.AccessError("Release not found", status=404)
     if release.committee is None:
         raise storage.AccessError(errors.RELEASE_NO_COMMITTEE, status=500)

@@ -2232,7 +2232,7 @@ async def _render_standard_resolve_page(
 
 
 def _resolve_handler():
-    wrapper = resolve.selected.__wrapped__
+    wrapper = inspect.unwrap(resolve.selected)
     if wrapper.__closure__ is None:
         raise AssertionError("Expected resolve.selected wrapper closure")
     for name, cell in zip(wrapper.__code__.co_freevars, wrapper.__closure__):

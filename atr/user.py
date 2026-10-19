@@ -22,9 +22,12 @@ from __future__ import annotations
 import functools
 from typing import TYPE_CHECKING
 
+import asfquart
+
 import atr.cache as cache
 import atr.config as config
 import atr.db as db
+import atr.log as log
 import atr.models.sql as sql
 import atr.util as util
 
@@ -65,6 +68,17 @@ async def candidate_drafts(uid: str, user_projects: list[sql.Project] | None = N
         releases = await interaction.candidate_drafts(p)
         user_candidate_drafts.extend(releases)
     return user_candidate_drafts
+
+
+def embargo_denies(release: sql.Release, uid: str | None, *, is_member: bool) -> bool:
+    import atr.notify as notify
+
+    if not embargo_hides_release(release, uid, is_member=is_member):
+        return False
+    log.auth_event("embargo_denied", uid, release_key=release.key)
+    if asfquart.APP is not None:
+        asfquart.APP.add_background_task(notify.embargo_denial, release.key)
+    return True
 
 
 def embargo_hides_release(release: sql.Release, uid: str | None, *, is_member: bool) -> bool:

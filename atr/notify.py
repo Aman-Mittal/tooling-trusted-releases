@@ -17,10 +17,24 @@
 
 from __future__ import annotations
 
+import atr.cache as cache
 import atr.constants as constants
 import atr.log as log
 import atr.models.sql as sql
 import atr.storage as storage
+
+
+async def embargo_denial(release_key: str) -> None:
+    message = f"Access to embargoed release {release_key} was denied"
+    for asf_uid in sorted(await cache.admins_get_async()):
+        await user(
+            asf_uid,
+            message,
+            sql.NotificationLevel.WARNING,
+            link="/admin/users?tab=embargo-denials",
+            link_text="Review embargo denials",
+            is_admin=True,
+        )
 
 
 async def user(
@@ -29,6 +43,7 @@ async def user(
     level: sql.NotificationLevel,
     link: str | None = None,
     link_text: str | None = None,
+    is_admin: bool = False,
 ) -> None:
     # Record a notification the user sees as a flash next time they load the UI. The system
     # service has no inbox, so skip it, and a failed notification never fails the caller.
@@ -36,6 +51,6 @@ async def user(
         return
     try:
         async with storage.write_as_user_service(asf_uid) as waus:
-            await waus.notifications_create(message, level, link=link, link_text=link_text)
+            await waus.notifications_create(message, level, link=link, link_text=link_text, is_admin=is_admin)
     except Exception:
         log.exception("Failed to record notification")

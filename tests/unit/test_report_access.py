@@ -37,6 +37,7 @@ async def test_report_anonymous_access(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, embargoed: bool
 ) -> None:
     release = types.SimpleNamespace(
+        key="test-0.1",
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
         committee=sql.Committee(key="test"),
         is_embargoed=embargoed,

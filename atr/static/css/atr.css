@@ -908,6 +908,7 @@ a.atr-link-plain:focus-visible {
     word-break: break-all;
 }
 
+.atr-embargo-denials-scroll,
 .atr-manifest-scroll {
     contain: inline-size;
 }

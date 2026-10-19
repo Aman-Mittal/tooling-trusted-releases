@@ -81,7 +81,11 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
 
     endpoint = common.setup_wrapper(wrapper, func, _BLUEPRINT_NAME)
 
-    decorated = wrapper if public else auth.require(auth.Requirements.committer)(wrapper)
+    decorated = (
+        wrapper
+        if public
+        else common.anonymous_embargo_probe(auth.require(auth.Requirements.committer)(wrapper), validated_params)
+    )
     _BLUEPRINT.add_url_rule(path, endpoint=endpoint, view_func=decorated, methods=["GET"])
     common.register_route(func, "get", _routes)
 
