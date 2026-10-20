@@ -32,4 +32,23 @@
     {{ sha512_form|safe }}
   </div>
 
+  {% if source_form %}
+    <h3 id="source">Declare source</h3>
+    <p>
+      This project lists several GitHub repositories. Say which one this archive was built
+      from and at which commit, and the source tree comparison will run against it.
+      Re-uploading the archive clears the declaration.
+    </p>
+    {% if source_declared %}
+      <p>
+        <strong>Declared:</strong> <code>{{ source_declared.repository }}</code> at <code>{{ source_declared.commit }}</code>
+      </p>
+    {% else %}
+      <p class="atr-text-concern">Not yet declared for this archive.</p>
+    {% endif %}
+    <div class="mb-4">
+      {{ source_form|safe }}
+    </div>
+  {% endif %}
+
 {% endblock content %}

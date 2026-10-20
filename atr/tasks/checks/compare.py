@@ -56,7 +56,7 @@ _PERMITTED_ADDED_PATHS: Final[dict[str, list[str]]] = {
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["github_tp_sha"]
-CHECK_VERSION: Final[str] = "6"
+CHECK_VERSION: Final[str] = "7"
 
 
 @dataclasses.dataclass
@@ -97,43 +97,58 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
         return None
 
     payload = await source.read(args.project_key, args.version_key, args.revision_number)
-    checkout_dir: str | None = None
-    archive_dir: str | None = None
-    if payload.repository and payload.sha:
-        try:
-            outcome = await _compare_checkout_and_archive(args, recorder, payload)
-        except OSError as e:
-            raise task.CheckRetryableError(
-                "Error reading the extracted archive tree",
-                {"error": str(e)},
-            ) from e
-        if outcome is None:
+    repository, sha = payload.repository, payload.sha
+    if not (repository and sha):
+        # With several repositories the release level record is empty, and each archive says for itself
+        declared = await source.archive(
+            args.project_key, args.version_key, args.revision_number, str(args.primary_rel_path)
+        )
+        if declared is None:
+            # A GitHub project we can't compare gets a concern rather than silence, so the release
+            # manager has to note it before the vote and voters can see the comparison is on them
+            if reason := _uncompared_reason(payload):
+                await recorder.concern(
+                    "Could not compare this archive against its GitHub source. "
+                    "Voters should check against the tagged source themselves",
+                    {"reason": reason, "repositories": list(payload.candidates), "commit": sha or None},
+                )
             return None
-        checkout_dir, archive_dir = outcome
+        repository, sha = declared.repository, declared.commit
+    try:
+        outcome = await _compare_checkout_and_archive(args, recorder, repository, sha)
+    except OSError as e:
+        raise task.CheckRetryableError(
+            "Error reading the extracted archive tree",
+            {"error": str(e)},
+        ) from e
+    if outcome is None:
+        return None
+    checkout_dir, archive_dir = outcome
     log.info(
         "Ran compare.source_trees successfully",
         project=args.project_key,
         version=args.version_key,
         revision=args.revision_number,
         path=args.primary_rel_path,
-        source_commit=payload.model_dump(),
+        repository=repository,
+        sha=sha,
         github_checkout=checkout_dir,
         archive_checkout=archive_dir,
     )
     return None
 
 
-async def _checkout_github_source(payload: atr.models.attestable.SourceV2, checkout_dir: safe.StatePath) -> str | None:
-    repo_url = f"https://github.com/{payload.repository}.git"
+async def _checkout_github_source(repository: str, sha: str, checkout_dir: safe.StatePath) -> str | None:
+    repo_url = f"https://github.com/{repository}.git"
     started_ns = time.perf_counter_ns()
     try:
-        await asyncio.wait_for(asyncio.to_thread(_clone_repo, repo_url, payload.sha, checkout_dir), timeout=360)
+        await asyncio.wait_for(asyncio.to_thread(_clone_repo, repo_url, sha, checkout_dir), timeout=360)
     except TimeoutError:
         elapsed_ms = (time.perf_counter_ns() - started_ns) / 1_000_000.0
         log.exception(
             "Timeout cloning GitHub repo for compare.source_trees",
             repo_url=repo_url,
-            sha=payload.sha,
+            sha=sha,
             checkout_dir=str(checkout_dir),
             clone_ms=elapsed_ms,
             git_author_name=os.environ.get("GIT_AUTHOR_NAME"),
@@ -158,7 +173,7 @@ async def _checkout_github_source(payload: atr.models.attestable.SourceV2, check
         log.exception(
             "Failed to clone GitHub repo for compare.source_trees",
             repo_url=repo_url,
-            sha=payload.sha,
+            sha=sha,
             checkout_dir=str(checkout_dir),
             clone_ms=elapsed_ms,
             git_author_name=os.environ.get("GIT_AUTHOR_NAME"),
@@ -174,7 +189,7 @@ async def _checkout_github_source(payload: atr.models.attestable.SourceV2, check
     log.debug(
         "Cloned GitHub repo for compare.source_trees",
         repo_url=repo_url,
-        sha=payload.sha,
+        sha=sha,
         checkout_dir=str(checkout_dir),
         clone_ms=elapsed_ms,
     )
@@ -204,7 +219,8 @@ def _clone_repo(repo_url: str, sha: str, checkout_dir: safe.StatePath) -> None:
 async def _compare_checkout_and_archive(  # noqa: C901
     args: checks.FunctionArguments,
     recorder: checks.Recorder,
-    payload: atr.models.attestable.SourceV2,
+    repository: str,
+    sha: str,
 ) -> tuple[str, str] | None:
     if not (primary_abs_path := await recorder.abs_path()):
         return None
@@ -219,12 +235,12 @@ async def _compare_checkout_and_archive(  # noqa: C901
     async with util.async_temporary_directory(prefix="trees-", dir=tmp_dir) as temp_dir:
         github_dir = safe.StatePath(temp_dir) / "github"
         await aiofiles.os.makedirs(github_dir, exist_ok=True)
-        checkout_dir = await _checkout_github_source(payload, github_dir)
+        checkout_dir = await _checkout_github_source(repository, sha, github_dir)
         if checkout_dir is None:
-            repo_url = f"https://github.com/{payload.repository}.git"
+            repo_url = f"https://github.com/{repository}.git"
             raise task.CheckRetryableError(
                 "Failed to clone GitHub repository for comparison",
-                {"repo_url": repo_url, "sha": payload.sha},
+                {"repo_url": repo_url, "sha": sha},
             )
         archive_root_result = await _find_archive_root(primary_abs_path, extracted_dir)
         if archive_root_result.root is None:
@@ -376,3 +392,12 @@ async def _find_archive_root(archive_path: safe.StatePath, extract_dir: safe.Sta
         extra_entries=extra_entries,
     )
     return ArchiveRootResult(root=found_root, extra_entries=extra_entries)
+
+
+def _uncompared_reason(payload: atr.models.attestable.SourceV2) -> str | None:
+    # Projects without a GitHub repository were never promised a comparison
+    if not payload.candidates:
+        return None
+    if len(payload.candidates) > 1:
+        return "Several GitHub repositories are listed and none is declared for this archive. Declare one under Tools"
+    return "No source commit has been recorded for this release"

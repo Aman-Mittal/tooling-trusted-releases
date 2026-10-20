@@ -28,6 +28,7 @@ import enum
 import hashlib
 import ipaddress
 import json
+import re
 from typing import TYPE_CHECKING, Any, Final, Literal, Optional, TypeVar, assert_never, overload
 
 import pydantic
@@ -1021,6 +1022,8 @@ class WorkflowSSHKey(sqlmodel.SQLModel, table=True):
     )
     # Declared by the workflow rather than signed by GitHub, so kept out of github_payload
     source_commit: str | None = sqlmodel.Field(default=None)
+    # Whether the archives this key uploads are taken to come from the workflow's own repository
+    declare_sources: bool = sqlmodel.Field(default=True)
     expires: int = sqlmodel.Field()
     revoked: bool = sqlmodel.Field(default=False)
 
@@ -1240,6 +1243,15 @@ class Project(sqlmodel.SQLModel, table=True):
     def is_active(self) -> bool:
         """Whether the project's status is active."""
         return self.status == ProjectStatus.ACTIVE
+
+    @property
+    def github_repositories(self) -> set[str]:
+        # Only the metadata says where the source lives - the policy's repository is where upload workflows run
+        return {
+            match[1].removesuffix(".git")
+            for url in self.repositories
+            if (match := re.fullmatch(r"https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/?", url))
+        }
 
     @property
     def safe_key(self) -> safe.ProjectKey:

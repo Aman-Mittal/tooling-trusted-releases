@@ -26,7 +26,6 @@ import atr.get as get
 import atr.log as log
 import atr.models.safe as safe
 import atr.shared as shared
-import atr.source as source
 import atr.storage as storage
 import atr.util as util
 import atr.web as web
@@ -193,10 +192,13 @@ async def _upload_source_override(
 ) -> db.Opt[str | None]:
     commit_hash = add_form.commit_hash
     async with db.session() as data:
-        release = await session.release(project_key, version_key, data=data, with_project_release_policy=True)
-        repository = source.repository(release.project)
+        release = await session.release(project_key, version_key, data=data)
+        candidates = release.project.github_repositories
+    # With several repositories the source is declared per archive, so a release level commit is ignored
+    if len(candidates) > 1:
+        return db.NOT_SET
     # The commit hash only means something for a GitHub source, so we insist on it there
-    if repository and (commit_hash is None):
+    if candidates and (commit_hash is None):
         raise storage.AccessError(
             "This project has a GitHub source repository, so a source commit hash is required.", status=400
         )

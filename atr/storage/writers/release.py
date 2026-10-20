@@ -39,6 +39,7 @@ import atr.analysis as analysis
 import atr.attestable as attestable
 import atr.auditlog as auditlog
 import atr.catalog_site as catalog_site
+import atr.classify as classify
 import atr.config as config
 import atr.constants as constants
 import atr.construct as construct
@@ -474,6 +475,76 @@ class CommitteeParticipant(FoundationCommitter):
             activity_at=release.activity_at.isoformat(),
         )
         return release
+
+    async def set_archive_sources(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        sources: Sequence[api.SourceDeclaration],
+        expected_revision: safe.RevisionNumber | None = None,
+    ) -> sql.Revision:
+        if not sources:
+            raise storage.AccessError("No archives were given to declare a source for", status=400)
+        if len({declaration.relpath for declaration in sources}) != len(sources):
+            raise storage.AccessError("Each archive can only be declared once", status=400)
+        release = await self.__data.release(project_key=str(project_key), version=str(version_key)).demand(
+            storage.AccessError("Release not found", status=404)
+        )
+        unknown = {declaration.repository for declaration in sources} - release.project.github_repositories
+        if unknown:
+            raise storage.AccessError(
+                f"Not one of this project's GitHub repositories: {', '.join(sorted(unknown))}", status=400
+            )
+        if release.latest_revision_number is None:
+            raise storage.AccessError("This draft has no files yet", status=404)
+        # The declarations are checked against the revision the caller was looking at, and the new
+        # revision is only made if that is still the latest - a declaration is about one particular upload
+        revision_number = expected_revision or release.safe_latest_revision_number
+        await self.__check_source_archives(project_key, version_key, revision_number, sources)
+        description = (
+            f"Source declared for {sources[0].relpath}"
+            if (len(sources) == 1)
+            else f"Source declared for {len(sources)} archives"
+        )
+        try:
+            result = await self.__write_as.revision.create_revision_with_quarantine(
+                project_key,
+                version_key,
+                self.__asf_uid,
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+                description=description,
+                expected_revision=revision_number,
+                path_sources={
+                    declaration.relpath: attestable_models.ArchiveSourceV2(
+                        repository=declaration.repository, commit=str(declaration.commit)
+                    )
+                    for declaration in sources
+                },
+            )
+        except (datatypes.FailedError, datatypes.RevisionMismatchError) as e:
+            raise storage.AccessError(str(e), status=409) from e
+        except ValueError as e:
+            raise storage.AccessError(str(e), status=400) from e
+        if isinstance(result, sql.Quarantined):
+            raise storage.AccessError("Source archives need validation before their source can be set", status=409)
+        return result
+
+    async def __check_source_archives(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        revision_number: safe.RevisionNumber,
+        sources: Sequence[api.SourceDeclaration],
+    ) -> None:
+        recorded = await attestable.load(project_key, version_key, revision_number)
+        if not isinstance(recorded, attestable_models.AttestableV2):
+            raise storage.AccessError(f"Revision {revision_number} was not found", status=404)
+        for declaration in sources:
+            entry = recorded.paths.get(str(declaration.relpath))
+            if entry is None:
+                raise storage.AccessError(f"{declaration.relpath} is not in this draft", status=404)
+            if entry.classification != classify.FileType.SOURCE.value:
+                raise storage.AccessError(f"{declaration.relpath} is not a source archive", status=400)
 
     async def set_commit_hash(
         self,

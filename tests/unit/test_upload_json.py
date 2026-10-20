@@ -136,61 +136,41 @@ async def test_add_files_json_unexpected_error_includes_traceback(app):
 
 @pytest.mark.asyncio
 async def test_upload_source_override_requires_hash_with_github_repo():
-    session = mock.AsyncMock()
+    session = _session_with_repositories({"apache/test"})
     add_form = mock.MagicMock()
     add_form.commit_hash = None
-    with (
-        mock.patch.object(upload.db, "session", _mock_db_session()),
-        mock.patch.object(upload.source, "repository", mock.Mock(return_value="apache/test")),
-    ):
+    with mock.patch.object(upload.db, "session", _mock_db_session()):
         with pytest.raises(upload.storage.AccessError) as exc:
             await upload._upload_source_override(session, add_form, safe.ProjectKey("test"), safe.VersionKey("1.0.0"))
     assert exc.value.status == 400
 
 
 @pytest.mark.asyncio
-async def test_upload_source_override_returns_hash_with_github_repo():
-    session = mock.AsyncMock()
+@pytest.mark.parametrize(
+    ("repositories", "commit_hash", "expected"),
+    [
+        ({"apache/test"}, "a" * 40, "a" * 40),
+        (set(), None, upload.db.NOT_SET),
+        (set(), "b" * 40, "b" * 40),
+        # With several repositories the source is declared per archive, so a hash here is ignored
+        ({"apache/first", "apache/second"}, "c" * 40, upload.db.NOT_SET),
+    ],
+)
+async def test_upload_source_override_by_repository_count(repositories: set[str], commit_hash: str | None, expected):
+    session = _session_with_repositories(repositories)
     add_form = mock.MagicMock()
-    add_form.commit_hash = safe.CommitHash("a" * 40)
-    with (
-        mock.patch.object(upload.db, "session", _mock_db_session()),
-        mock.patch.object(upload.source, "repository", mock.Mock(return_value="apache/test")),
-    ):
+    add_form.commit_hash = safe.CommitHash(commit_hash) if (commit_hash is not None) else None
+    with mock.patch.object(upload.db, "session", _mock_db_session()):
         result = await upload._upload_source_override(
             session, add_form, safe.ProjectKey("test"), safe.VersionKey("1.0.0")
         )
-    assert result == "a" * 40
+    assert result == expected
 
 
-@pytest.mark.asyncio
-async def test_upload_source_override_optional_without_repo():
+def _session_with_repositories(repositories: set[str]) -> mock.AsyncMock:
     session = mock.AsyncMock()
-    add_form = mock.MagicMock()
-    add_form.commit_hash = None
-    with (
-        mock.patch.object(upload.db, "session", _mock_db_session()),
-        mock.patch.object(upload.source, "repository", mock.Mock(return_value="")),
-    ):
-        result = await upload._upload_source_override(
-            session, add_form, safe.ProjectKey("test"), safe.VersionKey("1.0.0")
-        )
-    assert result is upload.db.NOT_SET
-
-
-@pytest.mark.asyncio
-async def test_upload_source_override_records_hash_without_repo():
-    session = mock.AsyncMock()
-    add_form = mock.MagicMock()
-    add_form.commit_hash = safe.CommitHash("b" * 40)
-    with (
-        mock.patch.object(upload.db, "session", _mock_db_session()),
-        mock.patch.object(upload.source, "repository", mock.Mock(return_value="")),
-    ):
-        result = await upload._upload_source_override(
-            session, add_form, safe.ProjectKey("test"), safe.VersionKey("1.0.0")
-        )
-    assert result == "b" * 40
+    session.release.return_value.project.github_repositories = repositories
+    return session
 
 
 def _mock_db_session():

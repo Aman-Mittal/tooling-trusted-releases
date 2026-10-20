@@ -106,6 +106,7 @@ class CommitteeParticipant(FoundationCommitter):
         github_payload: github.TrustedPublisherPayload,
         *,
         source_commit: safe.CommitHash | None = None,
+        declare_sources: bool = True,
     ) -> tuple[str, int]:
         now = int(time.time())
         # Twenty minutes to upload all files
@@ -126,6 +127,7 @@ class CommitteeParticipant(FoundationCommitter):
             github_nid=github_nid,
             github_payload=json_payload,
             source_commit=wsk_source_commit,
+            declare_sources=declare_sources,
             expires=expires,
         )
         self.__data.add(wsk)
@@ -137,6 +139,7 @@ class CommitteeParticipant(FoundationCommitter):
             github_uid=github_uid,
             github_nid=github_nid,
             source_commit=wsk_source_commit,
+            declare_sources=declare_sources,
             expires=expires,
         )
         return fingerprint, expires

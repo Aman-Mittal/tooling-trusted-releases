@@ -318,14 +318,9 @@ def test_project_recipient_defaults(defaults: Any, expected: list[str]) -> None:
         pytest.param(False, {}, {"rat_excludes_url": "https://example.org/x"}, ["project_fetch_urls"], id="rat-host"),
         pytest.param(False, {}, {"start_vote_template_url": "http://apache.org/t"}, ["project_fetch_urls"], id="http"),
         pytest.param(False, {}, {"github_vote_workflow_path": None}, [], id="null-paths"),
-        pytest.param(
-            False,
-            {},
-            {"github_finish_workflow_path": [".github/workflows/finish.yml"]},
-            ["project_trusted_publishing"],
-            id="paths-without-repository",
-        ),
-        pytest.param(False, {}, {"github_repository_branch": "main"}, ["project_trusted_publishing"], id="branch"),
+        # Workflow paths and a branch stand on their own now - the repository name is optional
+        pytest.param(False, {}, {"github_finish_workflow_path": [".github/workflows/finish.yml"]}, [], id="paths"),
+        pytest.param(False, {}, {"github_repository_branch": "main"}, [], id="branch"),
         pytest.param(False, {}, {"github_repository_name": "apache/x"}, ["project_trusted_publishing"], id="slash"),
         pytest.param(
             False,

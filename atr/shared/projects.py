@@ -561,7 +561,8 @@ class TrustedPublishingPolicyForm(form.Form):
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
     github_repository_name: str = form.label(
         "GitHub repository name",
-        "The name of the GitHub repository to use for the release, excluding the apache/ prefix.",
+        "Excluding the apache/ prefix. Leave empty to accept workflows from any GitHub repository in the"
+        " project metadata.",
     )
     github_repository_branch: str = form.label(
         "GitHub repository branch",

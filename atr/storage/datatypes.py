@@ -22,6 +22,7 @@ import enum
 from collections.abc import Callable
 
 import atr.classify as classify
+import atr.models.attestable
 import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.models.sql as sql
@@ -120,6 +121,8 @@ class PATRevocation(schema.Strict):
 
 
 class PathInfo(schema.Strict):
+    # Source archives that need a declared repository and commit, mapped to it, or to None while missing
+    archive_sources: dict[safe.RelPath, atr.models.attestable.ArchiveSourceV2 | None] = schema.factory(dict)
     blockers: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
     checker_stats: list[CheckerStats] = schema.factory(list)
     concerns: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)

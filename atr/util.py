@@ -1745,12 +1745,7 @@ def validate_trusted_publishing_constraints(
     github_repository_branch: str | None,
     all_paths: list[str],
 ) -> None:
-    if all_paths and (not github_repository_name):
-        raise ValueError("GitHub repository name is required when any workflow path is set.")
-
-    if github_repository_branch and (not github_repository_name):
-        raise ValueError("GitHub repository name is required when a GitHub branch is set.")
-
+    # The repository name is optional
     validation.validate_github_repository_name(github_repository_name)
     validation.validate_trusted_publishing_workflow_paths(all_paths)
 

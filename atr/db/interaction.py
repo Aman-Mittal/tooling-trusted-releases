@@ -1410,35 +1410,31 @@ async def _trusted_dist_lookup(
 async def _trusted_project(repository: str, workflow_ref: str, phase: TrustedProjectPhase) -> sql.Project:
     # Debugging
     log.info(f"GitHub OIDC JWT payload: {repository} {workflow_ref}")
-    repository_name, workflow_path = _trusted_project_checks(repository, workflow_ref)
+    workflow_path = _trusted_project_checks(repository, workflow_ref)
 
     rpnf_error = ReleasePolicyNotFoundError(
-        f"Release policy for repository {repository_name} and {phase.value} workflow path {workflow_path} not found"
+        f"Release policy for {repository} and {phase.value} workflow path {workflow_path} not found"
     )
     # TODO: If a policy is reused between projects, we can't get the project
     async with db.session() as db_data:
         match phase:
             case TrustedProjectPhase.COMPOSE:
                 # Searches in github_*compose*_workflow_path
-                policy = await db_data.release_policy(
-                    github_repository_name=repository_name,
-                    github_compose_workflow_path_has=workflow_path,
-                ).demand(rpnf_error)
+                policies = await db_data.release_policy(github_compose_workflow_path_has=workflow_path).all()
             case TrustedProjectPhase.VOTE:
                 # Searches in github_*vote*_workflow_path
-                policy = await db_data.release_policy(
-                    github_repository_name=repository_name,
-                    github_vote_workflow_path_has=workflow_path,
-                ).demand(rpnf_error)
+                policies = await db_data.release_policy(github_vote_workflow_path_has=workflow_path).all()
             case TrustedProjectPhase.FINISH:
                 # Searches in github_*finish*_workflow_path
-                policy = await db_data.release_policy(
-                    github_repository_name=repository_name,
-                    github_finish_workflow_path_has=workflow_path,
-                ).demand(rpnf_error)
-        project = await db_data.project(release_policy_id=policy.id).demand(
-            InteractionError(f"Project for release policy {policy.id} not found")
-        )
+                policies = await db_data.release_policy(github_finish_workflow_path_has=workflow_path).all()
+        matches = await _trusted_project_matches(db_data, policies, repository)
+    if not matches:
+        raise rpnf_error
+    # Two projects with the same repository and workflow can't be told apart, so neither is chosen
+    if len(matches) > 1:
+        keys = ", ".join(sorted(project.key for project in matches))
+        raise InteractionError(f"{repository} and {workflow_path} match more than one project: {keys}")
+    project = matches[0]
     if project.committee is None:
         raise InteractionError(f"Project {project.key} has no committee")
     if not await ci_builds_enabled(project.committee.key):
@@ -1446,10 +1442,9 @@ async def _trusted_project(repository: str, workflow_ref: str, phase: TrustedPro
     return project
 
 
-def _trusted_project_checks(repository: str, workflow_ref: str) -> tuple[str, str]:
+def _trusted_project_checks(repository: str, workflow_ref: str) -> str:
     if not repository.startswith("apache/"):
         raise InteractionError("Repository must start with 'apache/'")
-    repository_name = repository.removeprefix("apache/")
     if not workflow_ref.startswith(repository + "/"):
         raise InteractionError(f"Workflow ref must start with repository, got {workflow_ref}")
     workflow_path_at = workflow_ref.removeprefix(repository + "/")
@@ -1458,7 +1453,27 @@ def _trusted_project_checks(repository: str, workflow_ref: str) -> tuple[str, st
     workflow_path = workflow_path_at.rsplit("@", 1)[0]
     if not workflow_path.startswith(".github/workflows/"):
         raise InteractionError(f"Workflow path must start with '.github/workflows/', got {workflow_path}")
-    return repository_name, workflow_path
+    return workflow_path
+
+
+async def _trusted_project_matches(
+    db_data: db.Session, policies: Sequence[sql.ReleasePolicy], repository: str
+) -> list[sql.Project]:
+    matches: list[sql.Project] = []
+    for policy in policies:
+        project = await db_data.project(release_policy_id=policy.id).get()
+        # A policy with no project can't be the one a workflow is acting for, so it mustn't spoil the lookup
+        if project is None:
+            log.warning(f"Release policy {policy.id} lists a workflow path but has no project")
+            continue
+        # A named repository pins the workflow to it - an empty one means any repository the metadata lists
+        if policy.github_repository_name:
+            allowed = {"apache/" + policy.github_repository_name}
+        else:
+            allowed = project.github_repositories
+        if repository in allowed:
+            matches.append(project)
+    return matches
 
 
 def _trusted_summary_add(summary: TrustedVoteSummary, choice: sql.VoteChoice, is_binding: bool) -> None:

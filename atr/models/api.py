@@ -722,6 +722,12 @@ class PublisherDistributionRecordResults(schema.Strict):
     success: Literal[True] = schema.example(True)
 
 
+class SourceDeclaration(schema.Strict):
+    relpath: safe.RelPath = schema.example("example-0.0.1-src.tar.gz")
+    repository: str = schema.example("apache/example")
+    commit: safe.CommitHash = schema.example("0123456789abcdef0123456789abcdef01234567")
+
+
 class PublisherReleaseAnnounceArgs(schema.Strict):
     publisher: str = schema.example("user")
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
@@ -737,11 +743,34 @@ class PublisherReleaseAnnounceResults(schema.Strict):
     success: Literal[True] = schema.example(True)
 
 
+class PublisherReleaseSourceArgs(schema.Strict):
+    publisher: str = schema.example("user")
+    jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
+    version: safe.VersionKey = schema.example("0.0.1")
+    sources: list[SourceDeclaration] = schema.example(
+        [
+            {
+                "relpath": "example-0.0.1-src.tar.gz",
+                "repository": "apache/example",
+                "commit": "0123456789abcdef0123456789abcdef01234567",
+            }
+        ]
+    )
+    expected_revision: safe.RevisionNumber | None = schema.default_example(None, "00003")
+
+
+class PublisherReleaseSourceResults(schema.Strict):
+    endpoint: Literal["/publisher/release/source"] = schema.alias("endpoint")
+    revision: sql.Revision
+
+
 class PublisherSshRegisterArgs(schema.Strict):
     publisher: str = schema.example("user")
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
     ssh_key: str = schema.example("ssh-ed25519 AAAAC3NzaC1lZDI1NTEgH5C9okWi0dh25AAAAIOMqqnkVzrm0SdG6UOoqKLsabl9GKJl")
     source_commit: safe.OptionalCommitHash = schema.default_example(None, "0123456789abcdef0123456789abcdef01234567")
+    # False when the workflow builds from more than one repository, and declares each archive itself
+    declare_sources: bool = schema.default_example(True, True)
 
 
 class PublisherSshRegisterResults(schema.Strict):
@@ -863,6 +892,26 @@ class ReleasePathsResults(schema.Strict):
 class ReleaseRevisionsResults(schema.Strict):
     endpoint: Literal["/release/revisions"] = schema.alias("endpoint")
     revisions: Sequence[sql.Revision]
+
+
+class ReleaseSourceArgs(schema.Strict):
+    project: safe.ProjectKey = schema.example("example")
+    version: safe.VersionKey = schema.example("0.0.1")
+    sources: list[SourceDeclaration] = schema.example(
+        [
+            {
+                "relpath": "example-0.0.1-src.tar.gz",
+                "repository": "apache/example",
+                "commit": "0123456789abcdef0123456789abcdef01234567",
+            }
+        ]
+    )
+    expected_revision: safe.RevisionNumber | None = schema.default_example(None, "00003")
+
+
+class ReleaseSourceResults(schema.Strict):
+    endpoint: Literal["/release/source"] = schema.alias("endpoint")
+    revision: sql.Revision
 
 
 @dataclasses.dataclass
@@ -1125,6 +1174,7 @@ type Results = Annotated[
     | ProjectsListResults
     | PublisherDistributionRecordResults
     | PublisherReleaseAnnounceResults
+    | PublisherReleaseSourceResults
     | PublisherSshRegisterResults
     | PublisherVoteResolveResults
     | ReleaseAnnounceResults
@@ -1134,6 +1184,7 @@ type Results = Annotated[
     | ReleaseGetResults
     | ReleasePathsResults
     | ReleaseRevisionsResults
+    | ReleaseSourceResults
     | ReleaseStoreResults
     | ReleaseUploadResults
     | ReleasesListResults
@@ -1189,6 +1240,7 @@ validate_project_releases = validator(ProjectReleasesResults)
 validate_projects_list = validator(ProjectsListResults)
 validate_publisher_distribution_record = validator(PublisherDistributionRecordResults)
 validate_publisher_release_announce = validator(PublisherReleaseAnnounceResults)
+validate_publisher_release_source = validator(PublisherReleaseSourceResults)
 validate_publisher_ssh_register = validator(PublisherSshRegisterResults)
 validate_publisher_vote_resolve = validator(PublisherVoteResolveResults)
 validate_release_announce = validator(ReleaseAnnounceResults)
@@ -1198,6 +1250,7 @@ validate_release_draft_delete = validator(ReleaseDraftDeleteResults)
 validate_release_get = validator(ReleaseGetResults)
 validate_release_paths = validator(ReleasePathsResults)
 validate_release_revisions = validator(ReleaseRevisionsResults)
+validate_release_source = validator(ReleaseSourceResults)
 validate_release_store = validator(ReleaseStoreResults)
 validate_release_upload = validator(ReleaseUploadResults)
 validate_releases_list = validator(ReleasesListResults)

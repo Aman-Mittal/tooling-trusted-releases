@@ -29,6 +29,7 @@ import atr.db.interaction as interaction
 import atr.form as form
 import atr.get as get
 import atr.log as log
+import atr.models.api as api
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared as shared
@@ -36,6 +37,45 @@ import atr.storage as storage
 import atr.storage.datatypes as datatypes
 import atr.util as util
 import atr.web as web
+
+
+@post.typed
+async def archive_source(
+    session: web.Committer,
+    _draft_source: Literal["draft/source"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    file_path: safe.RelPath,
+    source_form: shared.draft.ArchiveSourceForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: /draft/source/<project_key>/<version_key>/<file_path>
+    Record which repository and commit a draft file was built from, creating a new revision.
+    """
+    try:
+        async with storage.write(session) as write:
+            wacp = await write.as_project_committee_participant(project_key)
+            declaration = api.SourceDeclaration(
+                relpath=file_path, repository=source_form.repository, commit=source_form.commit
+            )
+            await wacp.release.set_archive_sources(
+                project_key, version_key, [declaration], source_form.rendered_revision
+            )
+    except storage.AccessError as e:
+        await quart.flash(str(e), "error")
+        return await session.redirect(
+            get.draft.tools,
+            project_key=str(project_key),
+            version_key=str(version_key),
+            file_path=str(file_path),
+        )
+
+    return await session.redirect(
+        get.compose.selected,
+        success=f"Source declared for {file_path}",
+        project_key=str(project_key),
+        version_key=str(version_key),
+    )
 
 
 @post.typed

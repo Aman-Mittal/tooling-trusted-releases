@@ -43,16 +43,14 @@ import atr.tasks.task as task
 class CheckoutRecorder:
     def __init__(self, return_value: str | None = None) -> None:
         self.checkout_dir: safe.StatePath | None = None
-        self.source: atr.models.attestable.SourceV2 | None = None
+        self.repository: str | None = None
+        self.sha: str | None = None
         self.return_value = return_value
 
-    async def __call__(
-        self,
-        payload: atr.models.attestable.SourceV2,
-        checkout_dir: safe.StatePath,
-    ) -> str | None:
+    async def __call__(self, repository: str, sha: str, checkout_dir: safe.StatePath) -> str | None:
         self.checkout_dir = checkout_dir
-        self.source = payload
+        self.repository = repository
+        self.sha = sha
         assert await aiofiles.os.path.exists(checkout_dir)
         if self.return_value is not None:
             return self.return_value
@@ -60,11 +58,7 @@ class CheckoutRecorder:
 
 
 class CheckoutFailure:
-    async def __call__(
-        self,
-        payload: atr.models.github.TrustedPublisherPayload,
-        checkout_dir: safe.StatePath,
-    ) -> str | None:
+    async def __call__(self, repository: str, sha: str, checkout_dir: safe.StatePath) -> str | None:
         return None
 
 
@@ -342,7 +336,7 @@ async def test_checkout_github_source_uses_provided_dir(
 
     monkeypatch.setattr(atr.tasks.checks.compare, "_clone_repo", clone_recorder)
 
-    result = await atr.tasks.checks.compare._checkout_github_source(payload, checkout_dir)
+    result = await atr.tasks.checks.compare._checkout_github_source(payload.repository, payload.sha, checkout_dir)
 
     assert result == str(checkout_dir)
     assert len(clone_recorder.calls) == 1
@@ -830,8 +824,7 @@ async def test_source_trees_creates_temp_workspace_and_cleans_up(
     await atr.tasks.checks.compare.source_trees(args)
 
     assert checkout.checkout_dir is not None
-    assert checkout.source is not None
-    assert checkout.source.sha == (override or payload.sha)
+    assert checkout.sha == (override or payload.sha)
     checkout_dir = checkout.checkout_dir
     assert checkout_dir.path.name == "github"
     assert checkout_dir.parent.path.parent == tmp_root.path
@@ -861,6 +854,95 @@ async def test_source_trees_payload_none_skips_temp_workspace(monkeypatch: pytes
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", RaiseSync("get_tmp_dir should not be called"))
 
     await atr.tasks.checks.compare.source_trees(args)
+    assert recorder.concern_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("candidates", "override", "reason_start"),
+    [
+        (["apache/first", "apache/second"], None, "Several GitHub repositories"),
+        (["apache/first", "apache/second"], "c" * 40, "Several GitHub repositories"),
+        (["apache/first"], None, "No source commit"),
+    ],
+)
+async def test_source_trees_concern_when_uncomparable(
+    monkeypatch: pytest.MonkeyPatch, candidates: list[str], override: str | None, reason_start: str
+) -> None:
+    recorder = RecorderStub(True)
+    args = _make_args(recorder)
+    # Either the repository or the sha is missing from the record, so there's nothing to clone
+    recorded = atr.models.attestable.AttestableV2(
+        source=atr.models.attestable.SourceV2(override=override, candidates=candidates)
+    )
+
+    monkeypatch.setattr(atr.attestable, "load", mock.AsyncMock(return_value=recorded))
+    monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(None))
+    monkeypatch.setattr(
+        atr.tasks.checks.compare,
+        "_checkout_github_source",
+        RaiseAsync("_checkout_github_source should not be called"),
+    )
+
+    await atr.tasks.checks.compare.source_trees(args)
+
+    assert len(recorder.concern_calls) == 1
+    message, data = recorder.concern_calls[0]
+    assert message.startswith("Could not compare this archive against its GitHub source")
+    assert isinstance(data, dict)
+    assert data["reason"].startswith(reason_start)
+    assert data["repositories"] == candidates
+    assert data["commit"] == override
+
+
+@pytest.mark.asyncio
+async def test_source_trees_stays_quiet_without_github_repository(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = RecorderStub(True)
+    args = _make_args(recorder)
+    recorded = atr.models.attestable.AttestableV2(source=atr.models.attestable.SourceV2(candidates=[]))
+
+    monkeypatch.setattr(atr.attestable, "load", mock.AsyncMock(return_value=recorded))
+    monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(None))
+
+    await atr.tasks.checks.compare.source_trees(args)
+
+    assert recorder.concern_calls == []
+
+
+@pytest.mark.asyncio
+async def test_source_trees_uses_declared_source(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    temp_dir = safe.StatePath(tmp_path)
+    recorder = RecorderStub(True)
+    args = _make_args(recorder)
+    checkout = CheckoutRecorder()
+    cache_dir = temp_dir / "cache"
+    cache_dir.path.mkdir()
+    find_root = FindArchiveRootRecorder("artifact")
+    compare = CompareRecorder(repo_only=set())
+    # Two candidates and no release level choice, but this archive has said where it came from
+    declared = atr.models.attestable.ArchiveSourceV2(repository="apache/second", commit="d" * 40)
+    recorded = atr.models.attestable.AttestableV2(
+        paths={
+            "artifact.tar.gz": atr.models.attestable.PathEntryV2(
+                content_hash="h", classification="source", source=declared
+            )
+        },
+        source=atr.models.attestable.SourceV2(candidates=["apache/first", "apache/second"]),
+    )
+
+    monkeypatch.setattr(atr.attestable, "load", mock.AsyncMock(return_value=recorded))
+    monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(None))
+    monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
+    monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
+    monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
+    monkeypatch.setattr(atr.tasks.checks.compare, "_compare_trees", compare)
+    monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(temp_dir / "temporary-root"))
+
+    await atr.tasks.checks.compare.source_trees(args)
+
+    assert (checkout.repository, checkout.sha) == ("apache/second", "d" * 40)
+    assert recorder.concern_calls == []
+    assert len(recorder.note_calls) == 1
 
 
 @pytest.mark.asyncio
@@ -902,7 +984,9 @@ async def test_checkout_returns_none_for_http_auth_failures(
     monkeypatch.setattr(atr.tasks.checks.compare, "_clone_repo", raise_unauthorized)
     payload = _make_payload()
 
-    checkout_dir = await atr.tasks.checks.compare._checkout_github_source(payload, safe.StatePath(tmp_path))
+    checkout_dir = await atr.tasks.checks.compare._checkout_github_source(
+        payload.repository, payload.sha, safe.StatePath(tmp_path)
+    )
 
     assert checkout_dir is None
 

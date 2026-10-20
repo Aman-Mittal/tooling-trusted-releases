@@ -170,6 +170,7 @@ class QuarantineValidate(schema.Strict):
     archives: list[QuarantineArchiveEntry]
     github_payload: github.TrustedPublisherPayload | None = None
     source_commit: safe.CommitHash | None = None
+    declare_sources: bool = True
     # Absent means leave the override alone, and None means clear it, so use model_fields_set to tell them apart
     source_override: str | None = None
 

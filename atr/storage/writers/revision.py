@@ -101,6 +101,7 @@ async def finalise_revision(
     github_payload: github.TrustedPublisherPayload | None = None,
     source_commit: safe.CommitHash | None = None,
     source_override: db.Opt[str | None] = db.NOT_SET,
+    declare_sources: bool = True,
 ) -> sql.Revision:
     try:
         previous_attestable, merge_base_revision_key, _, merged_release = await _lock_and_merge(
@@ -143,6 +144,7 @@ async def finalise_revision(
         github_payload=github_payload,
         source_commit=source_commit,
         source_override=source_override,
+        declare_sources=declare_sources,
     )
 
 
@@ -167,6 +169,8 @@ async def _commit_new_revision(
     github_payload: github.TrustedPublisherPayload | None = None,
     source_commit: safe.CommitHash | None = None,
     source_override: db.Opt[str | None] = db.NOT_SET,
+    path_sources: dict[safe.RelPath, atr.models.attestable.ArchiveSourceV2] | None = None,
+    declare_sources: bool = True,
 ) -> sql.Revision:
     try:
         source_record = source.advance(
@@ -234,6 +238,11 @@ async def _commit_new_revision(
     swhid_dirs = attestable.compute_swhid_dirs(path_to_hash, previous_attestable, extracted_swhids)
     sha3_hashes = await attestable.compute_sha3_hashes(path_to_hash, previous_attestable, new_revision_dir, sha3_hashes)
     effective_provenance = attestable.effective_path_provenance(path_provenance, path_to_hash, previous_attestable)
+    if declare_sources and (github_payload is not None):
+        # The workflow's own repository and commit cover the archives it uploaded, unless told otherwise
+        uploaded = source.uploaded(source_record, github_payload, path_to_hash, classifications, previous_attestable)
+        path_sources = {**uploaded, **(path_sources or {})}
+    effective_sources = attestable.effective_path_sources(path_sources, path_to_hash, previous_attestable)
 
     await attestable.write_files_data(
         project_key,
@@ -247,6 +256,7 @@ async def _commit_new_revision(
         new_revision_dir,
         classifications=classifications,
         effective_path_provenance=effective_provenance,
+        effective_path_sources=effective_sources,
         swhid_dirs=swhid_dirs,
         sha3_hashes=sha3_hashes,
         source=source_record,
@@ -496,6 +506,8 @@ class CommitteeParticipant(FoundationCommitter):
         github_payload: github.TrustedPublisherPayload | None = None,
         source_commit: safe.CommitHash | None = None,
         source_override: db.Opt[str | None] = db.NOT_SET,
+        path_sources: dict[safe.RelPath, atr.models.attestable.ArchiveSourceV2] | None = None,
+        declare_sources: bool = True,
     ) -> sql.Revision | sql.Quarantined:
         """Create a new revision, quarantining archives that require validation."""
         async with db.session() as data:
@@ -520,10 +532,6 @@ class CommitteeParticipant(FoundationCommitter):
                 )
             else:
                 old_revision = await interaction.latest_revision(release)
-
-        # Checked again when the revision is recorded, but this rejects the upload before any files arrive
-        if github_payload is not None:
-            source.ensure_payload_repository(await source.current(release), github_payload)
 
         if clone_from is not None:
             old_release_dir = paths.release_directory_base(release) / str(clone_from)
@@ -661,9 +669,10 @@ class CommitteeParticipant(FoundationCommitter):
             if archive_paths:
                 # Setting the commit on its own brings no new files, so there's nothing to validate it against.
                 # An upload with a commit is quarantined, and the commit is applied when it is promoted.
-                if (not isinstance(source_override, db.NotSet)) and (modify is None):
+                source_only = (not isinstance(source_override, db.NotSet)) or (path_sources is not None)
+                if source_only and (modify is None):
                     await aioshutil.rmtree(temp_dir)
-                    raise datatypes.FailedError("Source archives need validation before the source commit can be set.")
+                    raise datatypes.FailedError("Source archives need validation before their source can be set.")
                 deduped = detection.deduplicate_quarantine_archives(archive_paths, path_to_hash)
                 if deduped:
                     return await self._quarantine_archives(
@@ -680,6 +689,7 @@ class CommitteeParticipant(FoundationCommitter):
                         github_payload=github_payload,
                         source_commit=source_commit,
                         source_override=source_override,
+                        declare_sources=declare_sources,
                     )
 
             return await _commit_new_revision(
@@ -700,6 +710,8 @@ class CommitteeParticipant(FoundationCommitter):
                 github_payload=github_payload,
                 source_commit=source_commit,
                 source_override=source_override,
+                path_sources=path_sources,
+                declare_sources=declare_sources,
             )
 
     async def set_tag(
@@ -768,6 +780,7 @@ class CommitteeParticipant(FoundationCommitter):
         github_payload: github.TrustedPublisherPayload | None = None,
         source_commit: safe.CommitHash | None = None,
         source_override: db.Opt[str | None] = db.NOT_SET,
+        declare_sources: bool = True,
     ) -> sql.Quarantined:
         file_metadata = [
             sql.QuarantineFileEntryV1(
@@ -811,6 +824,7 @@ class CommitteeParticipant(FoundationCommitter):
                 github_payload.model_dump(exclude={"exp", "nbf"}) if (github_payload is not None) else None
             ),
             "source_commit": source_commit,
+            "declare_sources": declare_sources,
             "archives": [{"rel_path": entry.rel_path, "content_hash": entry.content_hash} for entry in file_metadata],
         }
         # Only present when set, as None is itself a value meaning to clear the override

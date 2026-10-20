@@ -610,7 +610,7 @@ async def tar_gz_checks(
         compare.INPUT_POLICY_KEYS,
         release,
         revision,
-        await source.inputs(release.safe_project_key, release.safe_version_key, revision),
+        await source.inputs(release.safe_project_key, release.safe_version_key, revision, rel_path=path),
         file=path,
     )
     license_h_ck = await checks.resolve_cache_key(
@@ -711,7 +711,7 @@ async def zip_checks(
         compare.INPUT_POLICY_KEYS,
         release,
         revision,
-        await source.inputs(release.safe_project_key, release.safe_version_key, revision),
+        await source.inputs(release.safe_project_key, release.safe_version_key, revision, rel_path=path),
         file=path,
     )
     license_h_ck = await checks.resolve_cache_key(

@@ -231,30 +231,15 @@ def effective_path_provenance(
     path_to_hash: dict[safe.RelPath, str],
     previous: models.Attestable | None,
 ) -> dict[str, models.ProvenanceV2]:
-    result: dict[str, models.ProvenanceV2] = {}
-    caller: dict[str, models.ProvenanceV2] = {}
-    if path_provenance is not None:
-        caller = {str(path_key): value for path_key, value in path_provenance.items()}
-    prev_v2: models.AttestableV2 | None = previous if isinstance(previous, models.AttestableV2) else None
-    for path_key, content_hash in path_to_hash.items():
-        path_str = str(path_key)
-        # Use the provenance from the caller, if provided
-        if (caller_entry := caller.get(path_str)) is not None:
-            result[path_str] = caller_entry
-            continue
-        if prev_v2 is None:
-            continue
-        prev_entry = prev_v2.paths.get(path_str)
-        # Skip the path if it is not in the previous attestable data
-        if prev_entry is None:
-            continue
-        if prev_entry.content_hash != content_hash:
-            continue
-        if prev_entry.provenance is None:
-            continue
-        # Otherwise, we use the provenance from the previous attestable
-        result[path_str] = prev_entry.provenance
-    return result
+    return _effective_path_values(path_provenance, path_to_hash, previous, lambda entry: entry.provenance)
+
+
+def effective_path_sources(
+    path_sources: dict[safe.RelPath, models.ArchiveSourceV2] | None,
+    path_to_hash: dict[safe.RelPath, str],
+    previous: models.Attestable | None,
+) -> dict[str, models.ArchiveSourceV2]:
+    return _effective_path_values(path_sources, path_to_hash, previous, lambda entry: entry.source)
 
 
 def github_tp_payload_path(
@@ -523,6 +508,7 @@ async def write_files_data(
     base_path: safe.StatePath,
     classifications: dict[safe.RelPath, str] | None = None,
     effective_path_provenance: dict[str, models.ProvenanceV2] | None = None,
+    effective_path_sources: dict[str, models.ArchiveSourceV2] | None = None,
     swhid_dirs: dict[str, str] | None = None,
     sha3_hashes: dict[str, str] | None = None,
     source: models.SourceV2 | None = None,
@@ -537,6 +523,7 @@ async def write_files_data(
         base_path,
         classifications=classifications,
         effective_path_provenance=effective_path_provenance,
+        effective_path_sources=effective_path_sources,
         swhid_dirs=swhid_dirs,
         sha3_hashes=sha3_hashes,
     )
@@ -556,6 +543,34 @@ async def _atomic_modify_readonly(file_path: pathlib.Path, modify: Callable[[str
 async def _atomic_write_readonly(file_path: pathlib.Path, content: str) -> None:
     await util.atomic_write_file(file_path, content)
     await asyncio.to_thread(os.chmod, file_path, _READONLY_PERMISSIONS)
+
+
+def _effective_path_values[T](
+    given: dict[safe.RelPath, T] | None,
+    path_to_hash: dict[safe.RelPath, str],
+    previous: models.Attestable | None,
+    recorded: Callable[[models.PathEntryV2], T | None],
+) -> dict[str, T]:
+    # A per-path value is what the caller gives, or else what the previous revision recorded
+    # for the same path with the same content
+    result: dict[str, T] = {}
+    caller: dict[str, T] = {}
+    if given is not None:
+        caller = {str(path_key): value for path_key, value in given.items()}
+    prev_v2: models.AttestableV2 | None = previous if isinstance(previous, models.AttestableV2) else None
+    for path_key, content_hash in path_to_hash.items():
+        path_str = str(path_key)
+        if (caller_entry := caller.get(path_str)) is not None:
+            result[path_str] = caller_entry
+            continue
+        if prev_v2 is None:
+            continue
+        prev_entry = prev_v2.paths.get(path_str)
+        if (prev_entry is None) or (prev_entry.content_hash != content_hash):
+            continue
+        if (value := recorded(prev_entry)) is not None:
+            result[path_str] = value
+    return result
 
 
 def _compute_hashes_with_attribution(  # noqa: C901
@@ -613,6 +628,7 @@ async def _generate_files_data(
     base_path: safe.StatePath,
     classifications: dict[safe.RelPath, str] | None = None,
     effective_path_provenance: dict[str, models.ProvenanceV2] | None = None,
+    effective_path_sources: dict[str, models.ArchiveSourceV2] | None = None,
     swhid_dirs: dict[str, str] | None = None,
     sha3_hashes: dict[str, str] | None = None,
 ) -> models.AttestableV2:
@@ -633,6 +649,7 @@ async def _generate_files_data(
     if classifications is None:
         classifications = await compute_classifications(path_to_hash, release_policy, base_path)
     provenance_map = effective_path_provenance or {}
+    source_map = effective_path_sources or {}
     return models.AttestableV2(
         hashes=dict(new_hashes),
         paths={
@@ -640,6 +657,7 @@ async def _generate_files_data(
                 content_hash=hash_ref,
                 classification=classifications[path_key],
                 provenance=provenance_map.get(str(path_key)),
+                source=source_map.get(str(path_key)),
             )
             for path_key, hash_ref in path_to_hash.items()
         },

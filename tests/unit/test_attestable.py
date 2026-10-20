@@ -164,6 +164,29 @@ def test_effective_path_provenance_drops_inheritance_when_hash_changes():
     assert result == {}
 
 
+def test_effective_path_sources_follow_content():
+    declared = models.ArchiveSourceV2(repository="apache/second", commit="d" * 40)
+    given = models.ArchiveSourceV2(repository="apache/first", commit="e" * 40)
+    previous = models.AttestableV2(
+        paths={
+            "kept.tar.gz": models.PathEntryV2(content_hash="h1", classification="source", source=declared),
+            "changed.tar.gz": models.PathEntryV2(content_hash="h2", classification="source", source=declared),
+            "new.tar.gz": models.PathEntryV2(content_hash="h3", classification="source"),
+        },
+    )
+    result = attestable.effective_path_sources(
+        {safe.RelPath("new.tar.gz"): given},
+        {
+            safe.RelPath("kept.tar.gz"): "h1",
+            safe.RelPath("changed.tar.gz"): "h2-changed",
+            safe.RelPath("new.tar.gz"): "h3",
+        },
+        previous,
+    )
+
+    assert result == {"kept.tar.gz": declared, "new.tar.gz": given}
+
+
 def test_effective_path_provenance_v1_previous_returns_empty():
     previous = models.AttestableV1(paths={"a.tar.gz.sha512": "h2"})
     result = attestable.effective_path_provenance(

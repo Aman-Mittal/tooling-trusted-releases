@@ -144,23 +144,24 @@ genuine, matching what was built on the GitHub runners.
 ## Configuring repository and workflow paths
 
 For ATR to accept release operations that a GitHub Actions workflow performs on the project's
-behalf, it has to know which repository the workflow runs in, and which workflows are permitted to
-perform the operations of each phase of a release. You configure this in the project's release
+behalf, it has to know which repositories the workflow may run in, and which workflows are permitted
+to perform the operations of each phase of a release. You configure this in the project's release
 policy, under the Trusted Publishing tab of the project settings.
 
 There are three groups of settings.
 
 ### Repository name
 
-The name of the project's GitHub repository, without the `apache/` prefix. For example, if the
-repository is `apache/example`, enter `example`. The name must not contain a slash. You have to set
-this before any workflow path will be accepted, because ATR matches the repository named in the
-GitHub token against this value.
+The name of one GitHub repository, without the `apache/` prefix, whose workflows may act for the
+project. For example, if the repository is `apache/example`, enter `example`. The name must not
+contain a slash. This is optional. When it is set, ATR only accepts tokens from that repository.
+When it is empty, ATR accepts tokens from any GitHub repository listed in the project metadata. Set
+it when the release workflow lives somewhere other than the source repositories, or when you want
+to pin workflows to one of several.
 
 ### Repository branch
 
-The branch that release builds run from, for example `main` or `2.5.x`. This is optional, but if you
-do set a branch you must also set a repository name.
+The branch that release builds run from, for example `main` or `2.5.x`. This is optional.
 
 ### Workflow paths
 
@@ -184,11 +185,11 @@ finish a release unless it is also listed under finish.
 
 When a workflow calls one of the Trusted Publishing endpoints, GitHub sends ATR an OIDC token that
 names the repository, such as `apache/example`, and the workflow reference, such as
-`apache/example/.github/workflows/release-compose.yml@refs/heads/main`. ATR strips the `apache/`
-prefix and the trailing `@` git ref, then looks for a project whose release policy has a matching
-repository name and lists that workflow path under the phase being requested. If there is no match,
-the request is refused. The committee must also be eligible for Trusted Publishing, as described
-below.
+`apache/example/.github/workflows/release-compose.yml@refs/heads/main`. ATR strips the trailing `@`
+git ref, then looks for a project whose release policy lists that workflow path under the phase
+being requested and whose repository matches the token: the policy's repository name when one is
+set, or otherwise any GitHub repository in the project metadata. If there is no match, the request
+is refused. The committee must also be eligible for Trusted Publishing, as described below.
 
 ## GitHub Actions for ATR
 
@@ -223,6 +224,45 @@ There are a few things to be aware of when using these actions:
 Each action's README has the full list of inputs and some example workflows. When you create a draft
 release in ATR, the upload page also shows an example workflow already filled in with your project
 name.
+
+### Projects with several source repositories
+
+When the project metadata lists more than one GitHub repository, ATR cannot tell which repository a
+source archive was built from, so it does not record a single source commit for the release.
+Instead, each source archive is declared on its own, as a repository and a commit, and ATR compares
+the archive against that commit.
+
+You can declare an archive from the compose page, using the _Declare source_ button beside it. A
+workflow does not usually need to, because ATR declares the source archives that a workflow uploads
+as coming from the repository the workflow ran in. The commit is the one the workflow declared when
+it registered its SSH key, or otherwise the commit the run started from.
+
+If your workflow builds archives from more than one repository, that would record the wrong
+repository for some of them. Pass `"declare_sources": false` when the workflow registers its key,
+and ATR will leave the archives undeclared. The workflow then declares them itself after the upload,
+by calling `POST /api/publisher/release/source` with the path, repository, and commit of each
+archive:
+
+```json
+{
+  "publisher": "user",
+  "jwt": "<OIDC token>",
+  "version": "1.0.0",
+  "sources": [
+    {"relpath": "example-1.0.0-src.tar.gz", "repository": "apache/example", "commit": "<40 hex digits>"}
+  ]
+}
+```
+
+Each call creates a new revision of the draft, so declare all of the archives in one call. The
+repository must be one that the project metadata lists, and each path must be a source archive in
+the draft. If you pass `expected_revision`, ATR refuses the call when the draft has changed since
+that revision. You can make the same call with a personal API token as `POST /api/release/source`,
+giving `project` in place of `publisher` and `jwt`.
+
+A declaration applies to the archive as it was when the declaration was made, so uploading the
+archive again removes it. Until an archive has a declaration, ATR cannot compare it against its
+source, and records a concern that the release manager must note before starting a vote.
 
 ## How ATR detects automated release keys
 

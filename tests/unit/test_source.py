@@ -28,10 +28,15 @@ import atr.source as source
 
 
 @pytest.mark.parametrize("repository", ["apache/other", ""])
-def test_advance_rejects_payload_from_other_repository(repository: str, github_payload: github.TrustedPublisherPayload):
+def test_advance_ignores_run_commit_from_other_repository(
+    repository: str, github_payload: github.TrustedPublisherPayload
+):
+    # A workflow may run somewhere other than the source repository, so its starting commit means nothing here
     selected = atr.models.attestable.SourceV2(repository=repository, default="a" * 40, override="c" * 40)
-    with pytest.raises(ValueError, match="but the upload came from apache/test"):
-        source.advance(selected, github_payload, declared=safe.CommitHash("e" * 40))
+    result = source.advance(selected, github_payload, declared=safe.CommitHash("e" * 40))
+    assert result.default is None
+    assert result.override is None
+    assert result.declared == "e" * 40
 
 
 def test_advance_keeps_override_without_payload():
@@ -79,12 +84,12 @@ async def test_initial_accepts_repository_configured_after_first_revision():
     assert previous.source.repository == ""
 
 
-async def test_initial_prefers_policy_repository_over_recorded_one():
+async def test_initial_follows_metadata_not_policy_or_earlier_record():
     project = sql.Project(
         key="test",
         name="Test",
-        repositories=["https://github.com/apache/test"],
-        release_policy=sql.ReleasePolicy(github_repository_name="moved"),
+        repositories=["https://github.com/apache/moved"],
+        release_policy=sql.ReleasePolicy(github_repository_name="workflow-home"),
     )
     release = sql.Release(project=project, version="1.0")
     recorded = atr.models.attestable.SourceV2(repository="apache/test", default="a" * 40, override="c" * 40)
@@ -93,6 +98,20 @@ async def test_initial_prefers_policy_repository_over_recorded_one():
     assert selected.repository == "apache/moved"
     assert selected.override == "c" * 40
     assert recorded.repository == "apache/test"
+
+
+async def test_initial_refreshes_candidates():
+    project = sql.Project(
+        key="test",
+        name="Test",
+        repositories=["https://github.com/apache/second", "https://github.com/apache/first"],
+    )
+    release = sql.Release(project=project, version="1.0")
+    recorded = atr.models.attestable.SourceV2(candidates=["apache/first"])
+    selected = await source.initial(release, atr.models.attestable.AttestableV2(source=recorded))
+    assert selected.repository == ""
+    assert selected.candidates == ["apache/first", "apache/second"]
+    assert recorded.candidates == ["apache/first"]
 
 
 @pytest.mark.parametrize("recorded_hash", ["b" * 40, "c" * 40])
@@ -108,6 +127,55 @@ async def test_initial_preserves_legacy_choice(
     assert selected.default == github_payload.sha
     assert selected.sha == recorded_hash
     assert selected.override == (recorded_hash if (recorded_hash != github_payload.sha) else None)
+
+
+@pytest.mark.parametrize(
+    ("candidates", "declared", "expected_commit"),
+    [
+        (["apache/other", "apache/test"], None, "payload"),
+        (["apache/other", "apache/test"], "d" * 40, "d" * 40),
+    ],
+)
+def test_uploaded_declares_changed_source_archives_from_the_workflow_repository(
+    github_payload: github.TrustedPublisherPayload, candidates: list[str], declared: str | None, expected_commit: str
+):
+    record = atr.models.attestable.SourceV2(candidates=candidates, declared=declared)
+    previous = atr.models.attestable.AttestableV2(
+        paths={
+            "same-src.tar.gz": atr.models.attestable.PathEntryV2(content_hash="h1", classification="source"),
+            "changed-src.tar.gz": atr.models.attestable.PathEntryV2(content_hash="h2", classification="source"),
+        }
+    )
+    path_to_hash = {
+        safe.RelPath("same-src.tar.gz"): "h1",
+        safe.RelPath("changed-src.tar.gz"): "h2-new",
+        safe.RelPath("new-src.tar.gz"): "h3",
+        safe.RelPath("new-bin.tar.gz"): "h4",
+    }
+    classifications = {path: ("binary" if ("bin" in str(path)) else "source") for path in path_to_hash}
+
+    result = source.uploaded(record, github_payload, path_to_hash, classifications, previous)
+
+    commit = github_payload.sha if (expected_commit == "payload") else expected_commit
+    expected = atr.models.attestable.ArchiveSourceV2(repository=github_payload.repository, commit=commit)
+    # Unchanged archives keep whatever they had, and binaries have no source to declare
+    assert result == {safe.RelPath("changed-src.tar.gz"): expected, safe.RelPath("new-src.tar.gz"): expected}
+
+
+@pytest.mark.parametrize(
+    "candidates",
+    [
+        pytest.param(["apache/test"], id="one-repository"),
+        pytest.param(["apache/other", "apache/another"], id="workflow-not-a-source"),
+    ],
+)
+def test_uploaded_declares_nothing_outside_the_several_source_case(
+    github_payload: github.TrustedPublisherPayload, candidates: list[str]
+):
+    record = atr.models.attestable.SourceV2(candidates=candidates)
+    path_to_hash = {safe.RelPath("a-src.tar.gz"): "h1"}
+
+    assert source.uploaded(record, github_payload, path_to_hash, {safe.RelPath("a-src.tar.gz"): "source"}, None) == {}
 
 
 def test_override_can_be_set_or_cleared():
@@ -134,7 +202,11 @@ async def test_read_and_cache_inputs_use_requested_snapshot(
     original = mock.AsyncMock(return_value=github_payload)
     monkeypatch.setattr(attestable, "github_tp_payload_read", original)
     assert (await source.read(pk, vk, rev)).sha == "c" * 40
-    assert await source.inputs(pk, vk, rev) == {"source_repository": "apache/test", "source_commit": "c" * 40}
+    assert await source.inputs(pk, vk, rev) == {
+        "source_repository": "apache/test",
+        "source_commit": "c" * 40,
+        "source_candidates": "",
+    }
     attestable.load.assert_awaited_with(pk, vk, rev)
     original.assert_not_awaited()
     monkeypatch.setattr(attestable, "load", mock.AsyncMock(return_value=None))
@@ -147,7 +219,7 @@ async def test_read_and_cache_inputs_use_requested_snapshot(
     [
         (["https://github.com/apache/test.git"], "", "apache/test"),
         (["https://github.com/apache/first", "https://github.com/apache/second"], "", ""),
-        (["https://github.com/apache/first"], "configured", "apache/configured"),
+        (["https://github.com/apache/first"], "configured", "apache/first"),
         ([], "", ""),
     ],
 )
@@ -159,3 +231,57 @@ def test_repository_requires_one_choice(repositories: list[str], policy_name: st
         release_policy=sql.ReleasePolicy(github_repository_name=policy_name),
     )
     assert source.repository(project) == expected
+
+
+@pytest.mark.parametrize(
+    ("repositories", "policy_name", "expected"),
+    [
+        (["https://github.com/apache/test.git"], "", {"apache/test"}),
+        (
+            ["https://github.com/apache/first", "https://github.com/apache/second"],
+            "",
+            {"apache/first", "apache/second"},
+        ),
+        (
+            ["https://github.com/apache/first", "https://github.com/apache/second"],
+            "configured",
+            {"apache/first", "apache/second"},
+        ),
+        (["https://gitbox.apache.org/repos/asf/test.git"], "", set()),
+        ([], "configured", set()),
+    ],
+)
+def test_github_repositories_ignores_policy_and_other_hosts(
+    repositories: list[str], policy_name: str, expected: set[str]
+):
+    project = sql.Project(
+        key="test",
+        name="Test",
+        repositories=repositories,
+        release_policy=sql.ReleasePolicy(github_repository_name=policy_name),
+    )
+    assert project.github_repositories == expected
+
+
+async def test_inputs_include_declaration(monkeypatch: pytest.MonkeyPatch):
+    pk, vk, rev = safe.ProjectKey("test"), safe.VersionKey("1.0"), safe.RevisionNumber("00001")
+    declared = atr.models.attestable.ArchiveSourceV2(repository="apache/second", commit="c" * 40)
+    recorded = atr.models.attestable.AttestableV2(
+        paths={
+            "a.tar.gz": atr.models.attestable.PathEntryV2(content_hash="h", classification="source", source=declared)
+        },
+        source=atr.models.attestable.SourceV2(candidates=["apache/first", "apache/second"]),
+    )
+    monkeypatch.setattr(attestable, "load", mock.AsyncMock(return_value=recorded))
+    common = {"source_repository": "", "source_commit": "", "source_candidates": "apache/first,apache/second"}
+    assert await source.archive(pk, vk, rev, "a.tar.gz") == declared
+    assert await source.inputs(pk, vk, rev, rel_path="a.tar.gz") == {
+        **common,
+        "archive_repository": "apache/second",
+        "archive_commit": "c" * 40,
+    }
+    assert await source.inputs(pk, vk, rev, rel_path="b.tar.gz") == {
+        **common,
+        "archive_repository": "",
+        "archive_commit": "",
+    }

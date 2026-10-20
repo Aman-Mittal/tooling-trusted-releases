@@ -17,8 +17,6 @@
 
 from __future__ import annotations
 
-import re
-
 import atr.attestable as attestable
 import atr.db as db
 import atr.models.attestable
@@ -36,8 +34,8 @@ def advance(
 ) -> atr.models.attestable.SourceV2:
     source = source.model_copy()
     if payload is not None:
-        ensure_payload_repository(source, payload)
-        source.default = payload.sha
+        # The run's starting commit only describes the source when the workflow ran in the source repository
+        source.default = payload.sha if (payload.repository == source.repository) else None
         # The payload sha is only the commit the run started from, so the workflow can tell us what it checked out
         # An upload that doesn't say should clear any earlier value, otherwise it'd be stale
         source.declared = str(declared) if (declared is not None) else None
@@ -50,6 +48,16 @@ def advance(
     return source
 
 
+async def archive(
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision_number: safe.RevisionNumber, rel_path: str
+) -> atr.models.attestable.ArchiveSourceV2 | None:
+    recorded = await attestable.load(project_key, version_key, revision_number)
+    if not isinstance(recorded, atr.models.attestable.AttestableV2):
+        return None
+    entry = recorded.paths.get(rel_path)
+    return entry.source if (entry is not None) else None
+
+
 async def current(release: sql.Release) -> atr.models.attestable.SourceV2:
     previous = None
     if release.latest_revision_number is not None:
@@ -59,23 +67,17 @@ async def current(release: sql.Release) -> atr.models.attestable.SourceV2:
     return await initial(release, previous)
 
 
-def ensure_payload_repository(source: atr.models.attestable.SourceV2, payload: github.TrustedPublisherPayload) -> None:
-    # A payload from some other repository says nothing about this release's source
-    if source.repository != payload.repository:
-        expected = source.repository or "no configured repository"
-        raise ValueError(f"This release's source is {expected}, but the upload came from {payload.repository}")
-
-
 async def initial(
     release: sql.Release, previous: atr.models.attestable.Attestable | None
 ) -> atr.models.attestable.SourceV2:
+    candidates = sorted(release.project.github_repositories)
     if isinstance(previous, atr.models.attestable.AttestableV2) and (previous.source is not None):
         source = previous.source.model_copy()
-        # The release policy says where the source lives, so it wins over whatever an earlier revision recorded
-        if release.project.policy_github_repository_name or (not source.repository):
-            source.repository = repository(release.project)
+        # Both follow the metadata, so a repository added or corrected since the last revision shows up
+        source.repository = repository(release.project)
+        source.candidates = candidates
         return source
-    source = atr.models.attestable.SourceV2(repository=repository(release.project))
+    source = atr.models.attestable.SourceV2(repository=repository(release.project), candidates=candidates)
     if not release.commit_hash:
         return source
     payload = await attestable.latest_github_tp_payload(release.safe_project_key, release.safe_version_key)
@@ -88,10 +90,24 @@ async def initial(
 
 
 async def inputs(
-    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision_number: safe.RevisionNumber
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision_number: safe.RevisionNumber,
+    *,
+    rel_path: str | None = None,
 ) -> dict[str, str]:
     source = await read(project_key, version_key, revision_number)
-    return {"source_repository": source.repository, "source_commit": source.sha}
+    # The candidates decide whether a comparison is even possible, so they belong in the cache key too
+    values = {
+        "source_repository": source.repository,
+        "source_commit": source.sha,
+        "source_candidates": ",".join(source.candidates),
+    }
+    if rel_path is not None:
+        declared = await archive(project_key, version_key, revision_number, rel_path)
+        values["archive_repository"] = declared.repository if (declared is not None) else ""
+        values["archive_commit"] = declared.commit if (declared is not None) else ""
+    return values
 
 
 async def read(
@@ -107,11 +123,28 @@ async def read(
 
 
 def repository(project: sql.Project) -> str:
-    if name := project.policy_github_repository_name:
-        return "apache/" + name
-    repositories = {
-        match[1].removesuffix(".git")
-        for url in project.repositories
-        if (match := re.fullmatch(r"https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/?", url))
-    }
+    # More than one candidate means we can't say which repository a given archive came from, so nothing is chosen
+    repositories = project.github_repositories
     return repositories.pop() if (len(repositories) == 1) else ""
+
+
+def uploaded(
+    record: atr.models.attestable.SourceV2,
+    payload: github.TrustedPublisherPayload,
+    path_to_hash: dict[safe.RelPath, str],
+    classifications: dict[safe.RelPath, str],
+    previous: atr.models.attestable.Attestable | None,
+) -> dict[safe.RelPath, atr.models.attestable.ArchiveSourceV2]:
+    # A workflow's archives come from the repository it ran in, when that is one of the source repositories
+    # With one repository the release level record already says so, and an earlier upload's archives aren't ours
+    if (len(record.candidates) < 2) or (payload.repository not in record.candidates):
+        return {}
+    declared = atr.models.attestable.ArchiveSourceV2(
+        repository=payload.repository, commit=record.declared or payload.sha
+    )
+    previous_hashes = attestable.path_hashes(previous) if (previous is not None) else {}
+    return {
+        path: declared
+        for path, content_hash in path_to_hash.items()
+        if (classifications[path] == "source") and (previous_hashes.get(str(path)) != content_hash)
+    }

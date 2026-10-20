@@ -88,12 +88,22 @@ async def selected(
     block.h2(id="file-upload")["File upload"]
     block.p["Use this form to add files to this candidate draft."]
 
+    # With several repositories a release level commit means nothing, so each archive is declared after upload
+    several_repositories = len(selected_source.candidates) > 1
+    source_note = None
+    if several_repositories:
+        source_note = htm.p(".text-muted")[
+            "This project lists several GitHub repositories, so the repository and commit each source archive "
+            "was built from are declared on the compose page once the files are uploaded.",
+        ]
     await form.render_block(
         block,
         model_cls=shared.upload.AddFilesForm,
         submit_label="Add files",
         form_classes=".atr-canary.py-4.px-5",
         defaults={"commit_hash": selected_source.override or ""},
+        skip=["commit_hash"] if several_repositories else None,
+        pre_submit=source_note,
     )
 
     block.append(htpy.div("#upload-progress-container.d-none"))
@@ -314,7 +324,9 @@ def _workflow_upload_warning(selected_source: atr.models.attestable.SourceV2) ->
         "If you meant to update the release, re-running the workflow is probably the better route.",
     ]
     # An override means someone has already said which commit the files come from
-    if not selected_source.override:
+    if len(selected_source.candidates) > 1:
+        warning.p(".mb-0")["Declare the source of each archive you upload on the compose page afterwards."]
+    elif not selected_source.override:
         warning.p(".mb-0")[
             "The workflow recorded the source commit as ",
             htm.code[selected_source.sha],

@@ -706,6 +706,7 @@ async def test_validate_success_calls_promote(
         github_payload=payload,
         source_commit=source_commit,
         source_override=quarantine.db.NOT_SET,
+        declare_sources=True,
     )
     mock_mark.assert_not_awaited()
 

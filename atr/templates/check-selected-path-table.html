@@ -85,6 +85,9 @@
                   <code>{{ path }}</code>
                 {% endif %}
               </a>
+              {% if info and (path in info.archive_sources) and (info.archive_sources[path] is none) %}
+                <span class="atr-text-concern small ms-2">Source not declared</span>
+              {% endif %}
             {% else %}
               {% if path_style_class %}
                 <strong><code class="{{ path_style_class }}">{{ path }} (empty)</code></strong>
@@ -128,6 +131,10 @@
               {% if is_cyclonedx_json_fn(path.as_path().name) %}
                 <a href="{{ as_url(get.sbom.quality, project_key=project_key|string, version_key=version_key|string, file_path=path) }}"
                    class="btn btn-sm btn-outline-secondary">View SBOM</a>
+              {% endif %}
+              {% if info and (path in info.archive_sources) %}
+                <a href="{{ as_url(get.draft.tools, project_key=project_key|string, version_key=version_key|string, file_path=path) }}#source"
+                   class="btn btn-sm btn-outline-secondary">Declare source</a>
               {% endif %}
               {% if has_blockers %}
                 <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"

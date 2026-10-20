@@ -22,9 +22,11 @@ import collections
 import dataclasses
 
 import atr.analysis as analysis
+import atr.attestable as attestable
 import atr.classify as classify
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.models.attestable
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
@@ -73,9 +75,25 @@ class GeneralPublic:
         if file_types is None:
             file_types = await self.__file_types(release, revision, all_paths)
         info.file_types.update(file_types)
+        await self.__archive_sources(release, revision, info)
         self.__pair_sboms(info, all_paths)
         self.__compute_checker_stats(info, all_paths, tally.counts)
         return info
+
+    async def __archive_sources(
+        self, release: sql.Release, revision: safe.RevisionNumber, info: datatypes.PathInfo
+    ) -> None:
+        # Only a project with several GitHub repositories declares per archive
+        if len(release.project.github_repositories) < 2:
+            return
+        recorded = await attestable.load(release.safe_project_key, release.safe_version_key, revision)
+        if not isinstance(recorded, atr.models.attestable.AttestableV2):
+            return
+        for path, file_type in info.file_types.items():
+            if file_type != classify.FileType.SOURCE:
+                continue
+            entry = recorded.paths.get(str(path))
+            info.archive_sources[path] = entry.source if (entry is not None) else None
 
     def __accumulate_results(
         self,

@@ -19,6 +19,17 @@ import atr.form as form
 import atr.models.safe as safe
 
 
+class ArchiveSourceForm(form.Form):
+    repository: str = form.label("Repository", widget=form.Widget.SELECT, required=True)
+    commit: safe.CommitHash = form.label(
+        "Source commit hash",
+        "The full 40-character commit this archive was built from.",
+        widget=form.Widget.TEXT,
+        required=True,
+    )
+    rendered_revision: safe.RevisionNumber = form.label("Rendered revision", widget=form.Widget.HIDDEN)
+
+
 class ClearQuarantineForm(form.Form):
     quarantined_id: form.Int = form.label("Quarantine ID", widget=form.Widget.HIDDEN)
 

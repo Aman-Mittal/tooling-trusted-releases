@@ -1203,6 +1203,33 @@ async def publisher_release_announce(
 
 @api.typed(
     auth_scheme=api_auth.Auth.BODY_OIDC,
+    response=(models.api.PublisherReleaseSourceResults, 201),
+)
+async def publisher_release_source(
+    _publisher_release_source: Literal["publisher/release/source"],
+    data: models.api.PublisherReleaseSourceArgs,
+) -> DictResponse:
+    """
+    URL: POST /publisher/release/source
+
+    Declare the repository and commit that source archives in a draft were built from,
+    with a corroborating Trusted Publisher JWT.
+    """
+    ctx = api.auth.trusted_publisher_context()
+    asf_uid, project = await interaction.trusted_project_for_payload(
+        ctx.payload,
+        ctx.asf_uid,
+        interaction.TrustedProjectPhase.COMPOSE,
+    )
+    revision = await _declare_sources(asf_uid, project.safe_key, data.version, data.sources, data.expected_revision)
+    return models.api.PublisherReleaseSourceResults(
+        endpoint="/publisher/release/source",
+        revision=revision,
+    ).model_dump(mode="json"), 201
+
+
+@api.typed(
+    auth_scheme=api_auth.Auth.BODY_OIDC,
     rate_limit=(10, datetime.timedelta(hours=1)),
 )
 async def publisher_ssh_register(
@@ -1233,6 +1260,7 @@ async def publisher_ssh_register(
             data.ssh_key,
             payload,
             source_commit=data.source_commit,
+            declare_sources=data.declare_sources,
         )
 
     return models.api.PublisherSshRegisterResults(
@@ -1562,6 +1590,27 @@ async def release_revisions(
         endpoint="/release/revisions",
         revisions=revisions,
     ).model_dump(mode="json"), 200
+
+
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.ReleaseSourceResults, 201),
+)
+async def release_source(
+    _release_source: Literal["release/source"],
+    data: models.api.ReleaseSourceArgs,
+) -> DictResponse:
+    """
+    URL: POST /release/source
+
+    Declare the repository and commit that source archives in a draft were built from.
+    This is for projects with several GitHub repositories, where ATR can't tell which one an archive came from.
+    """
+    revision = await _declare_sources(_jwt_asf_uid(), data.project, data.version, data.sources, data.expected_revision)
+    return models.api.ReleaseSourceResults(
+        endpoint="/release/source",
+        revision=revision,
+    ).model_dump(mode="json"), 201
 
 
 @api.typed(
@@ -2272,6 +2321,21 @@ async def vote_tabulate(
         trusted_summary=trusted_summary,
         trusted_passed=trusted_passed,
     ).model_dump(mode="json"), 200
+
+
+async def _declare_sources(
+    asf_uid: str,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    sources: list[models.api.SourceDeclaration],
+    expected_revision: safe.RevisionNumber | None,
+) -> sql.Revision:
+    try:
+        async with storage.write(asf_uid) as write:
+            wacp = await write.as_project_committee_participant(project_key)
+            return await wacp.release.set_archive_sources(project_key, version_key, sources, expected_revision)
+    except storage.AccessError as e:
+        raise _http_exception_from_storage_access_error(e) from e
 
 
 def _http_exception_from_storage_access_error(error: storage.AccessError) -> exceptions.HTTPException:

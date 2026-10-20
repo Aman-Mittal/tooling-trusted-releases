@@ -95,6 +95,7 @@ class SSHServer(asyncssh.SSHServer):
         self._github_project_key: safe.ProjectKey | None = None
         self._github_read_only = False
         self._github_source_commit: safe.CommitHash | None = None
+        self._github_declare_sources = True
         peer_addr = conn.get_extra_info("peername")[0]
         log.info(f"SSH connection received from {peer_addr}")
         if not _rate_limit_check(global_ip_rate_buckets, peer_addr, _RATE_LIMIT_IP):
@@ -220,6 +221,7 @@ class SSHServer(asyncssh.SSHServer):
         self._github_read_only = workflow_key.github_nid == interaction.GITHUB_TRUSTED_ROLE_NID
         if workflow_key.source_commit is not None:
             self._github_source_commit = safe.CommitHash(workflow_key.source_commit)
+        self._github_declare_sources = workflow_key.declare_sources
         return True
 
     def _get_asf_uid(self, process: asyncssh.SSHServerProcess) -> str:
@@ -243,6 +245,12 @@ class SSHServer(asyncssh.SSHServer):
         if self._github_project_key is None:
             raise RsyncArgsError("GitHub authentication did not resolve a project")
         return self._github_project_key
+
+    def _get_github_declare_sources(self, process: asyncssh.SSHServerProcess) -> bool:
+        username = process.get_extra_info("username")
+        if username != "github":
+            return True
+        return self._github_declare_sources
 
     def _get_github_source_commit(self, process: asyncssh.SSHServerProcess) -> safe.CommitHash | None:
         username = process.get_extra_info("username")
@@ -724,6 +732,7 @@ async def _step_07b_process_validated_rsync_write(
                 modify=modify,
                 github_payload=github_payload,
                 source_commit=source_commit,
+                declare_sources=server._get_github_declare_sources(process),
             )
             if isinstance(result, sql.Quarantined):
                 log.info(f"rsync upload quarantined for release {release_key}")
