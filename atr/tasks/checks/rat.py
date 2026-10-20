@@ -80,7 +80,7 @@ INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_ra
 # The resolver fetches the configured .rat-excludes URL and returns a hash of its contents, so a
 # change to the fetched file busts the cached result even though the URL string is unchanged
 INPUT_EXTRA_ARGS: Final[list[str]] = ["rat_excludes_hash", "rat_jar_name"]
-CHECK_VERSION: Final[str] = "6"
+CHECK_VERSION: Final[str] = "7"
 
 
 class RatError(RuntimeError):
@@ -685,11 +685,9 @@ def _synchronous_core_parse_output_core(xml_file: str, base_dir: str) -> checkda
                 unknown_licenses += 1
                 unknown_license_files.append(checkdata.RatFileEntry(name=name, license="Unknown license"))
         else:
-            approval = license_elem.get("approval", "false")
-            is_approved = approval == "true"
             license_name = license_elem.get("name", "Unknown")
 
-            if is_approved:
+            if resource.find("license[@approval='true']") is not None:
                 approved_licenses += 1
             elif license_name == "Unknown license":
                 unknown_licenses += 1

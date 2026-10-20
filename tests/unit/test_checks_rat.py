@@ -285,6 +285,17 @@ async def test_fetch_url_excludes_records_unavailable_failure() -> None:
     assert result.error == "404"
 
 
+def test_parse_output_prefers_approved_license(tmp_path: pathlib.Path):
+    report = tmp_path / "report.xml"
+    report.write_text(
+        '<rat-report><version version="0.18"/><resource name="/a.py" type="STANDARD">'
+        '<license approval="false" id="GPL3" name="GNU General Public License V3.0"/>'
+        '<license approval="true" id="MIT" name="The MIT License"/>'
+        "</resource></rat-report>"
+    )
+    assert rat._synchronous_core_parse_output(str(report), str(tmp_path)).valid
+
+
 def test_parse_output_records_rat_version(tmp_path: pathlib.Path):
     report = tmp_path / "report.xml"
     report.write_text('<rat-report><version version="0.18"/></rat-report>')
