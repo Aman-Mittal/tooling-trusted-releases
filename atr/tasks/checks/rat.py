@@ -649,7 +649,7 @@ def _synchronous_core_parse_output_core(xml_file: str, base_dir: str) -> checkda
     """Parse the XML output from Apache RAT."""
     tree = ElementTree.parse(xml_file)
     root = tree.getroot()
-    if (root is None) or (root.tag != "rat-report") or (root.find("version") is None):
+    if (root is None) or (root.tag != "rat-report") or ((version := root.find("version")) is None):
         raise ElementTree.ParseError("Expected a rat-report root element with a version element")
 
     total_files = 0
@@ -714,6 +714,7 @@ def _synchronous_core_parse_output_core(xml_file: str, base_dir: str) -> checkda
         unknown_licenses=unknown_licenses,
         unapproved_files=unapproved_files[:100],
         unknown_license_files=unknown_license_files[:100],
+        version=version.get("version", ""),
     )
 
 
