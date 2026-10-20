@@ -285,6 +285,12 @@ async def test_fetch_url_excludes_records_unavailable_failure() -> None:
     assert result.error == "404"
 
 
+def test_parse_output_rejects_unexpected_structure(tmp_path: pathlib.Path):
+    report = tmp_path / "report.xml"
+    report.write_text("<html/>")
+    assert rat._synchronous_core_parse_output(str(report), str(tmp_path)).errors
+
+
 def test_sanitise_command_replaces_absolute_paths():
     command = [
         "java",
