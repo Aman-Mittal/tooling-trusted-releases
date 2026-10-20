@@ -107,10 +107,11 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "${api}/issues" -d "$data" >/dev/null
 
-      - name: Build image and check SBOM spec parity
+      - name: Build image and check tool compatibility
         run: |
           docker build -f Dockerfile.alpine -t atr:ci .
           docker run --rm atr:ci .venv/bin/python scripts/ci/check_sbom_spec_parity.py --require-tools
+          docker run --rm atr:ci sh -c '.venv/bin/python scripts/ci/check_rat_schema.py /opt/tools/apache-rat-*.jar'
 
       - name: Check that the server runs as a non-root user
         env:
