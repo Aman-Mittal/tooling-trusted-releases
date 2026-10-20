@@ -79,7 +79,7 @@ _STD_EXCLUSIONS_EXTENDED: Final[list[str]] = [
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_rat"]
 # The resolver fetches the configured .rat-excludes URL and returns a hash of its contents, so a
 # change to the fetched file busts the cached result even though the URL string is unchanged
-INPUT_EXTRA_ARGS: Final[list[str]] = ["rat_excludes_hash"]
+INPUT_EXTRA_ARGS: Final[list[str]] = ["rat_excludes_hash", "rat_jar_name"]
 CHECK_VERSION: Final[str] = "6"
 
 

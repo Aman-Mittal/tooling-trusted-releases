@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 import atr.analysis as analysis
 import atr.attestable as attestable
 import atr.classify as classify
+import atr.config as config
 import atr.db as db
 import atr.errors as errors
 import atr.hashes as hashes
@@ -570,6 +571,10 @@ async def _resolve_rat_excludes_hash(release: sql.Release, rel_path: str | None 
     return rat_excludes.content_hash(content)
 
 
+async def _resolve_rat_jar_name(release: sql.Release, rel_path: str | None = None) -> str:
+    return pathlib.Path(config.get().APACHE_RAT_JAR_PATH).name
+
+
 async def _resolve_suffixed_file_existence(release: sql.Release, rel_path: str | None = None) -> list[str]:
     if (not rel_path) or (not release.latest_revision_number):
         return []
@@ -622,6 +627,7 @@ _EXTRA_ARG_RESOLVERS: Final[dict[str, Callable[[sql.Release, str | None], Any]]]
     "github_tp_sha": _resolve_github_tp_sha,
     "is_podling": _resolve_is_podling,
     "rat_excludes_hash": _resolve_rat_excludes_hash,
+    "rat_jar_name": _resolve_rat_jar_name,
     "suffixed_file_existence": _resolve_suffixed_file_existence,
     "unsuffixed_file_hash": _resolve_unsuffixed_file_hash,
     "unsuffixed_file_uploaders": _resolve_unsuffixed_file_uploaders,
