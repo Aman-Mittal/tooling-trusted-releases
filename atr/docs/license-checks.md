@@ -92,7 +92,7 @@ Files are skipped (considered generated) if the first 4KB of the file contains o
 ### Included file types
 
 Unlike RAT, the lightweight check uses an allowlist of file extensions (e.g., `.js`, `.py`, `.java`,
-etc.). If a file extension isn't in the list, it gets ignored by default.
+etc.). If a file extension isn't in the list, it gets ignored by default. Files that start with `#!` are also checked, whatever their extension.
 
 ## Project policy exclusions
 

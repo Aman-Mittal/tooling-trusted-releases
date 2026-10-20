@@ -86,13 +86,15 @@ INCLUDED_PATTERNS: Final[list[str]] = [
     r"\.(groovy|gvy|gy|gsh)$",  # Groovy
     r"\.(scala|sc)$",  # Scala
     r"\.(pl|pm|t)$",  # Perl
+    r"\.(bat|cmd)$",
+    r"\.dtd$",
 ]
 
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_lightweight"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling"]
 CHECK_VERSION_FILES: Final[str] = "7"
-CHECK_VERSION_HEADERS: Final[str] = "7"
+CHECK_VERSION_HEADERS: Final[str] = "8"
 
 _BINARY_LICENSE_FILENAMES: Final[frozenset[str]] = frozenset({"LICENSE", "LICENSE.txt"})
 _BINARY_NOTICE_FILENAMES: Final[frozenset[str]] = frozenset({"NOTICE", "NOTICE.txt"})
@@ -233,6 +235,7 @@ def headers_validate(content: bytes, _filename: str) -> tuple[bool, str | None]:
         if pattern in content:
             return True, None
 
+    content = re.sub(rb"^[ \t]*@?rem\b", b"", content, flags=re.MULTILINE | re.IGNORECASE)
     spdx = re.sub(rb"[ \t]+", b" ", content)
     if all(re.search(pattern, spdx, re.MULTILINE | re.IGNORECASE) for pattern in SPDX_APACHE_LICENSE_PATTERNS):
         return True, None
@@ -519,6 +522,13 @@ def _headers_check_core_logic(  # noqa: C901
     )
 
 
+def _headers_check_core_logic_is_script(file_path: pathlib.Path) -> bool:
+    if file_path.name.endswith(constants.GENERATED_FILE_SUFFIXES):
+        return False
+    with open(file_path, "rb") as f:
+        return f.read(2) == b"#!"
+
+
 def _headers_check_core_logic_process_file(
     file_path: pathlib.Path,
     rel_path: str,
@@ -531,7 +541,7 @@ def _headers_check_core_logic_process_file(
         )
 
     # Check if we should verify this file, based on extension
-    if not _headers_check_core_logic_should_check(rel_path):
+    if not (_headers_check_core_logic_should_check(rel_path) or _headers_check_core_logic_is_script(file_path)):
         return MemberSkippedResult(
             path=rel_path,
             reason="Not a source file",

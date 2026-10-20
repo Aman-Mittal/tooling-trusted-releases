@@ -308,6 +308,13 @@ def test_headers_check_includes_excludes_source_policy(tmp_path):
     assert final_result.data["excludes_source"] == "policy"
 
 
+def test_headers_script_without_extension(tmp_path):
+    source_path = tmp_path / "run"
+    source_path.write_bytes(b"#!/bin/sh\n")
+    result = license._headers_check_core_logic_process_file(source_path, "run")
+    assert result.status == sql.CheckResultStatus.CONCERN
+
+
 @pytest.mark.parametrize("padding, status", [(0, sql.CheckResultStatus.NOTE), (4096, sql.CheckResultStatus.CONCERN)])
 def test_headers_spdx_file(tmp_path, padding, status):
     source_path = tmp_path / "example.py"
@@ -359,9 +366,11 @@ def test_headers_validate_spdx_requires_all_fields(missing):
     assert license.headers_validate(content, "example.py")[0] is False
 
 
+@pytest.mark.parametrize("prefix", [b"#", b"REM", b"@REM"])
 @pytest.mark.parametrize("scheme", [b"http:", b"https:"])
-def test_headers_validate_standard(scheme):
-    content = pathlib.Path(__file__).read_bytes().split(b"\n\n", 1)[0].replace(b"http:", scheme)
+def test_headers_validate_standard(prefix, scheme):
+    content = pathlib.Path(__file__).read_bytes().split(b"\n\n", 1)[0]
+    content = content.replace(b"http:", scheme).replace(b"#", prefix)
     assert license.headers_validate(content, "example.py") == (True, None)
 
 
