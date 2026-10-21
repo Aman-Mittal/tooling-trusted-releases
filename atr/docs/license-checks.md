@@ -43,17 +43,24 @@ The Apache RAT (Release Audit Tool) scans every file in the archive.
 
 ### Standard exclusions
 
-If you don't provide a custom exclusion file, RAT uses a default config that excludes:
+Every RAT run excludes editor and operating system leftovers and hidden directories (RAT's `MISC`, `MAC` and `HIDDEN_DIR` collections):
 
-* Standard SCM directories (like `.git`, `.svn`)
-* IDE configuration files
+* `**/*~`, `**/#*#`, `**/.#*`, `**/%*%` and `**/._*`
+* `**/.DS_Store`
+* any directory whose name starts with `.`, such as `.git`, `.github` or `.idea`
+
+If the archive does not contain a `.rat-excludes` file, RAT also excludes Maven, IntelliJ IDEA and Git files (RAT's `MAVEN`, `IDEA` and `GIT` collections), even when your exclusions come from the RAT excludes URL or the RAT source excludes in your project policy:
+
+* `**/target/**`, `**/.mvn/**`, `**/MANIFEST.MF`, `**/release.properties`, `**/pom.xml.releaseBackup`, `**/build.log`, `**/cobertura.ser` and `**/.repository`
+* `**/*.iml`, `**/*.ipr`, `**/*.iws` and `**/.idea/**`
+* `**/.git/**` and `**/.gitignore`
 
 ### Custom exclusions
 
 You can define your own exclusions by adding a `.rat-excludes` file to the archive.
 
 > [!IMPORTANT]
-> If a `.rat-excludes` file exists, the **standard exclusions are ignored**.
+> If a `.rat-excludes` file exists, the Maven, IntelliJ IDEA and Git exclusions are not applied, but the other standard exclusions and the generated file patterns still are.
 
 **Scan root behavior**: You can only have one `.rat-excludes` file. The folder it's in becomes the
 **scan root**.
