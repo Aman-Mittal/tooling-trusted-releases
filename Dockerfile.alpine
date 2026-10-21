@@ -5,16 +5,20 @@ ENV PIP_DEFAULT_TIMEOUT=100 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
     UV_NO_DEV=1 \
+    UV_SYSTEM_CERTS=true \
     UV_VERSION=0.11.20
 
 RUN apk update && \
     apk add --no-cache \
       build-base \
+      'ca-certificates>=20261020-r0' \
+      'ca-certificates-bundle>=20261020-r0' \
       git \
       make \
       patch \
       re2-dev
 
+RUN pip3 install 'pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70'
 RUN pip3 install uv==${UV_VERSION}
 
 # use the same workdir as in the final image
@@ -44,6 +48,8 @@ ARG TARGETARCH
 
 RUN apk update && \
     apk add --no-cache \
+      'ca-certificates>=20261020-r0' \
+      'ca-certificates-bundle>=20261020-r0' \
       curl \
       go \
       icu-libs
@@ -120,6 +126,8 @@ ENV JAVA_TOOL_OPTIONS="-XX:MaxMetaspaceSize=32m -Xmx128m -XX:+UseSerialGC -XX:Ma
 RUN apk update && \
     apk add --no-cache \
       bash \
+      'ca-certificates>=20261020-r0' \
+      'ca-certificates-bundle>=20261020-r0' \
       curl \
       file \
       git \

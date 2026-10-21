@@ -1,6 +1,9 @@
 FROM alpine:edge
 
-RUN apk add --no-cache npm \
+RUN apk add --no-cache \
+       'ca-certificates>=20261020-r0' \
+       'ca-certificates-bundle>=20261020-r0' \
+       npm \
   && apk add --no-cache \
        --repository=https://dl-cdn.alpinelinux.org/alpine/edge/testing \
        dart-sass
