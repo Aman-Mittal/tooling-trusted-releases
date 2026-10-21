@@ -59,6 +59,8 @@ If the archive does not contain a `.rat-excludes` file, RAT also excludes Maven,
 
 You can define your own exclusions by adding a `.rat-excludes` file to the archive.
 
+ATR reads your RAT exclusions only from a `.rat-excludes` file in the archive, the RAT excludes URL, or the RAT source excludes in your [project policy](#project-policy-exclusions). It does not read RAT configuration from your build, such as `apache-rat-plugin` settings in a Maven POM or a RAT task in a Gradle or Ant build, nor from a `.ratignore` file, so exclusions that you configure there do not apply in ATR.
+
 > [!IMPORTANT]
 > If a `.rat-excludes` file exists, the Maven, IntelliJ IDEA and Git exclusions are not applied, but the other standard exclusions and the generated file patterns still are.
 
