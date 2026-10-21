@@ -366,6 +366,17 @@ def test_vers_literal_emits_single_version_constraint():
     assert cle._vers_literal(project, "1.0.0") == "vers:generic/1.0.0"
 
 
+def test_vers_literal_leaves_generic_versions_as_written():
+    project = SimpleNamespace(version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
+    assert cle._vers_literal(project, "3.0") == "vers:generic/3.0"
+
+
+def test_vers_literal_writes_two_part_semver_versions_in_full():
+    project = SimpleNamespace(version_method=sql.VersionMethod.SEMVER, committee_key="mycommittee")
+    assert cle._vers_literal(project, "3.0") == "vers:semver/3.0.0"
+    assert cle._vers_literal(project, "not-a-semver") == "vers:semver/not-a-semver"
+
+
 def test_vers_scheme_picks_generic_for_simple_projects():
     project = SimpleNamespace(version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     assert cle._vers_scheme(project) == "generic"

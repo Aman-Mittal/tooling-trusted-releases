@@ -58,6 +58,17 @@ def test_cycle_name_supports_named_cycle_via_capture():
     assert cycles.cycle_name_for_version(project, "stable-2.5") == "stable"
 
 
+def test_newest_first_orders_cycles_by_number_with_default_last():
+    names = ["10", "3", "default", "9", "11", "4"]
+    ordered = cycles.newest_first(SimpleNamespace(cycle=name) for name in names)
+    assert [c.cycle for c in ordered] == ["11", "10", "9", "4", "3", "default"]
+
+
+def test_newest_first_orders_dotted_cycles_part_by_part():
+    ordered = cycles.newest_first(SimpleNamespace(cycle=name) for name in ["2.9", "2.10", "10", "2"])
+    assert [c.cycle for c in ordered] == ["10", "2.10", "2.9", "2"]
+
+
 def test_prior_release_calver_picks_highest_below_target_within_a_cycle():
     # A cycled calver project: the YY.MM is the cycle, the trailing serial
     # the patch level. The prior of a patch is the patch below it in the line.
@@ -194,6 +205,36 @@ def test_prior_release_semver_strips_v_prefix():
     assert prior.version == "v1.1.0"
 
 
+def test_prior_release_semver_ranks_two_part_versions():
+    project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SEMVER)
+    # Released-date ordering deliberately reversed to prove we sort by version.
+    candidates = [_release("4.0", _ts(10)), _release("4.1", _ts(5)), _release("3.9", _ts(1))]
+    prior = cycles.prior_release_in_cycle(project, "4.2", candidates)
+    assert prior is not None
+    assert prior.version == "4.1"
+
+
+def test_latest_release_semver_ranks_two_part_versions():
+    project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SEMVER)
+    # 4.10 is later than 4.9 though it sorts before it as text.
+    candidates = [_release("4.9", _ts(10)), _release("4.10", _ts(1)), _release("4.2", _ts(5))]
+    latest = cycles.latest_release_in_cycle(project, "4.9", candidates)
+    assert latest is not None
+    assert latest.version == "4.10"
+
+
+def test_semver_parse_reads_missing_parts_as_zero():
+    assert str(cycles.semver_parse("3.0")) == "3.0.0"
+    assert str(cycles.semver_parse("v3")) == "3.0.0"
+    assert str(cycles.semver_parse("3.0-rc1")) == "3.0.0-rc1"
+
+
+def test_semver_parse_rejects_what_is_not_semver():
+    assert cycles.semver_parse("1.2.3.4") is None
+    assert cycles.semver_parse("0.05") is None
+    assert cycles.semver_parse("garbage") is None
+
+
 def test_latest_release_calver_picks_highest_within_the_target_cycle():
     project = SimpleNamespace(
         key="example",
@@ -221,18 +262,18 @@ def test_latest_release_returns_none_when_nothing_is_rankable():
 def test_latest_release_returns_none_when_the_target_alone_cannot_be_ranked():
     # Ranking it against siblings it can't be compared with would make it look superseded
     project = SimpleNamespace(key="example", cycle_match=r"^(\d+)\..+", version_method=sql.VersionMethod.SEMVER)
-    candidates = [_release("1.1.0", _ts(1)), _release("1.2", _ts(2))]
-    assert cycles.latest_release_in_cycle(project, "1.2", candidates) is None
+    candidates = [_release("1.1.0", _ts(1)), _release("1.2.0.1", _ts(2))]
+    assert cycles.latest_release_in_cycle(project, "1.2.0.1", candidates) is None
 
 
 def test_latest_release_falls_back_to_dates_when_the_whole_cycle_is_unrankable():
-    # A semver project whose versions are all two-part: none parse, so they order by date
+    # A semver project whose versions are all four-part: none parse, so they order by date
     # together, and exactly one of them must still come out as the latest
     project = SimpleNamespace(key="example", cycle_match=r"^(\d+)\..+", version_method=sql.VersionMethod.SEMVER)
-    older, newer = _release("1.3", _ts(1)), _release("1.2", _ts(2))
-    latest = cycles.latest_release_in_cycle(project, "1.3", [older, newer])
+    older, newer = _release("1.3.0.1", _ts(1)), _release("1.2.0.1", _ts(2))
+    latest = cycles.latest_release_in_cycle(project, "1.3.0.1", [older, newer])
     assert latest is not None
-    assert latest.version == "1.2"
+    assert latest.version == "1.2.0.1"
 
 
 def test_latest_release_undated_target_cannot_be_ranked_by_date():

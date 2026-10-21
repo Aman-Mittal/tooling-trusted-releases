@@ -122,7 +122,7 @@ def latest_release_in_cycle(
             return _latest_by_released_date(version, same_cycle)
         case sql.VersionMethod.SEMVER:
             ranked = _ranked_semver(same_cycle)
-            target_ranks = _semver_parse(version) is not None
+            target_ranks = semver_parse(version) is not None
         case sql.VersionMethod.CALVER:
             if not project.calver_format:
                 return _latest_by_released_date(version, same_cycle)
@@ -137,6 +137,15 @@ def latest_release_in_cycle(
         # superseded by versions it was never compared against
         return None
     return ranked[0][1]
+
+
+def newest_first(project_cycles: Iterable[sql.ProjectCycle]) -> list[sql.ProjectCycle]:
+    """Order a project's cycles for display, newest first, with the default cycle last.
+
+    Cycle names are version prefixes, so they compare by number (10 ahead of 9)
+    and not as text, which is the order the database hands them back in.
+    """
+    return sorted(project_cycles, key=_cycle_order_key, reverse=True)
 
 
 def prior_release_in_cycle(
@@ -169,6 +178,19 @@ def prior_release_in_cycle(
             return _prior_release_calver(project, version, same_cycle)
 
 
+def semver_parse(version_str: str) -> semver.VersionInfo | None:
+    """Parse a version as semver, or None when it isn't.
+
+    A leading v is dropped, and a version with only a major and minor (3.0) or
+    just a major is read with the rest as zero, so 3.0 is 3.0.0. Projects that
+    number their releases that way would otherwise never rank.
+    """
+    try:
+        return semver.VersionInfo.parse(version_str.lstrip("v"), optional_minor_and_patch=True)
+    except ValueError:
+        return None
+
+
 async def reassign_release_cycles(data: db.Session, project: sql.Project) -> None:
     """Re-resolve cycle membership for every release in the project.
 
@@ -195,6 +217,17 @@ async def reassign_release_cycles(data: db.Session, project: sql.Project) -> Non
                 )
             )
         release.cycle_key = new_cycle_key
+
+
+def _cycle_order_key(cycle: sql.ProjectCycle) -> tuple[bool, tuple[tuple[int, int | str], ...]]:
+    # Numbers sort ahead of strings within a part, and the default cycle ranks below every other
+    parts: list[tuple[int, int | str]] = []
+    for part in cycle.cycle.replace("+", ".").replace("-", ".").split("."):
+        try:
+            parts.append((0, int(part)))
+        except ValueError:
+            parts.append((1, part))
+    return (cycle.cycle != DEFAULT_CYCLE, tuple(parts))
 
 
 def _latest_by_released_date(version: str, releases: list[sql.Release]) -> sql.Release | None:
@@ -230,7 +263,7 @@ def _prior_release_calver(project: sql.Project, version: str, releases: list[sql
 
 
 def _prior_release_semver(version: str, releases: list[sql.Release]) -> sql.Release | None:
-    target = _semver_parse(version)
+    target = semver_parse(version)
     if target is None:
         return None
     for parsed, candidate in _ranked_semver(releases):
@@ -253,7 +286,7 @@ def _ranked_calver(format_str: str, releases: list[sql.Release]) -> list[tuple[t
 def _ranked_semver(releases: list[sql.Release]) -> list[tuple[semver.VersionInfo, sql.Release]]:
     ranked: list[tuple[semver.VersionInfo, sql.Release]] = []
     for candidate in releases:
-        parsed = _semver_parse(candidate.version)
+        parsed = semver_parse(candidate.version)
         if parsed is None:
             continue
         ranked.append((parsed, candidate))
@@ -276,10 +309,3 @@ def _same_cycle_candidates(project: sql.Project, version: str, releases: Iterabl
         if candidate_cycle == target_cycle:
             same_cycle.append(candidate)
     return same_cycle
-
-
-def _semver_parse(version_str: str) -> semver.VersionInfo | None:
-    try:
-        return semver.VersionInfo.parse(version_str.lstrip("v"))
-    except ValueError:
-        return None

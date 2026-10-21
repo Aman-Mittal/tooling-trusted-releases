@@ -45,6 +45,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Final
 
+import atr.cycles as cycles
 import atr.models.cle as cle
 import atr.models.sql as sql
 
@@ -331,13 +332,13 @@ def _vers_for_cycle(project: sql.Project, cycle_name: str, cycle_releases: list[
             return f"vers:{scheme}/>={floor}|<{ceiling}"
     if not cycle_releases:
         return f"vers:{scheme}/*"
-    constraints = "|".join(r.version for r in cycle_releases)
+    constraints = "|".join(_vers_version(project, r.version) for r in cycle_releases)
     return f"vers:{scheme}/{constraints}"
 
 
 def _vers_literal(project: sql.Project, version: str) -> str:
     """Render a VERS range matching exactly one version."""
-    return f"vers:{_vers_scheme(project)}/{version}"
+    return f"vers:{_vers_scheme(project)}/{_vers_version(project, version)}"
 
 
 def _vers_scheme(project: sql.Project) -> str:
@@ -349,3 +350,15 @@ def _vers_scheme(project: sql.Project) -> str:
     if project.version_method is sql.VersionMethod.SEMVER:
         return "semver"
     return "generic"
+
+
+def _vers_version(project: sql.Project, version: str) -> str:
+    """Spell a version the way its VERS scheme expects.
+
+    Semver names whole versions, so a project whose releases are numbered 3.0 has
+    them written as 3.0.0. A version that doesn't parse is left as it is.
+    """
+    if project.version_method is not sql.VersionMethod.SEMVER:
+        return version
+    parsed = cycles.semver_parse(version)
+    return str(parsed) if (parsed is not None) else version

@@ -300,9 +300,9 @@ async def view(
 
     released_cycle_keys = {r.cycle_key for r in project.releases_including_embargoed}
     visible_cycle_keys = {r.cycle_key for r in visible_releases}
-    project_cycles = [
+    project_cycles = cycles.newest_first(
         c for c in project_cycles if (c.cycle_key not in released_cycle_keys) or (c.cycle_key in visible_cycle_keys)
-    ]
+    )
 
     page = htm.Block()
 
