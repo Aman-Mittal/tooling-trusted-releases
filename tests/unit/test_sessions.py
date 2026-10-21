@@ -31,7 +31,9 @@ import atr.get as get
 import atr.ldap as ldap
 import atr.models.sql as sql
 import atr.post as post
+import atr.principal as principal
 import atr.sessions as sessions
+import atr.web as web
 
 _MOCK_CONFIG = types.SimpleNamespace(ADMIN_ONLY=False, MAX_SESSION_AGE=0)
 
@@ -112,25 +114,37 @@ async def test_create_logs_auth_success(store, monkeypatch):
     events: list[tuple[str, str | None]] = []
     monkeypatch.setattr("atr.log.auth_success", lambda type, asfuid=None: events.append((type, asfuid)))
 
-    await store.create(_hsid(), {"uid": "alice"})
+    await store.create(_hsid(), _session_data())
 
     assert events == [("oauth", "alice")]
 
 
-async def test_create_maps_pmcs_to_member_committees(store):
+async def test_create_maps_oauth_memberships_to_authorisation(store, monkeypatch):
+    monkeypatch.setattr(principal.cache, "last_refreshed", {})
     hsid = _hsid()
     await store.create(hsid, _session_data())
     user_session = await store.validate(hsid)
     assert user_session is not None
-    assert user_session.member_committees == ["test"]
+
+    authorisation = await principal.Authorisation(web.Committer(user_session))
+
+    assert authorisation.is_member_of("mahout")
+    assert not authorisation.is_member_of("tooling")
+    assert authorisation.is_participant_of("tooling")
 
 
 async def test_create_maps_roleaccount_to_is_role(store):
     hsid = _hsid()
-    await store.create(hsid, {"uid": "alice", "roleaccount": True, "pmcs": []})
+    await store.create(hsid, _session_data(roleaccount=True))
     user_session = await store.validate(hsid)
     assert user_session is not None
     assert user_session.is_role is True
+
+
+async def test_create_rejects_client_session(store):
+    client_session = sessions.asfquart.session.ClientSession(_session_data())
+    with pytest.raises(KeyError):
+        await store.create(_hsid(), client_session)
 
 
 async def test_create_sets_timestamps(store):
@@ -418,6 +432,22 @@ def _hsid() -> str:
 
 
 def _session_data(uid: str = "alice", **kwargs) -> dict:
-    base = {"uid": uid, "pmcs": ["test"], "projects": ["test"]}
+    base = {
+        "user": uid,
+        "uid": uid,
+        "dn": f"uid={uid},ou=people,dc=apache,dc=org",
+        "fullname": uid.title(),
+        "email": f"{uid}@apache.org",
+        "emails": [],
+        "altemails": [],
+        "isMember": False,
+        "isChair": False,
+        "isRoot": False,
+        "pmcs": ["mahout"],
+        "projects": ["mahout", "tooling"],
+        "provider": "oidc",
+        "mfa": True,
+        "origin_uri": "https://localhost.apache.org:8080/auth",
+    }
     base.update(kwargs)
     return base

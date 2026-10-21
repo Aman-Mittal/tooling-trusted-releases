@@ -151,10 +151,8 @@ def _prepare_session_data(session_data: dict[str, Any]) -> dict[str, Any]:
     # Raw "roleaccount" becomes UserSession.is_role
     # Since awrite() passes the raw dict, we map from the raw key names here
     data = dict(session_data)
-    if "pmcs" in data:
-        data["member_committees"] = data.pop("pmcs")
-    if "projects" in data:
-        data["participant_committees"] = data.pop("projects")
+    data["member_committees"] = data.pop("pmcs")
+    data["participant_committees"] = data.pop("projects")
     if "isMember" in data:
         data["is_member"] = data.pop("isMember")
     if "isChair" in data:
