@@ -893,7 +893,9 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
         test_client_project.description = "Test client project for the end-to-end suite."
         test_client_project.homepage = "https://test.apache.org/"
         test_client_project.download_page = "https://test.apache.org/download"
-        test_client_project.repositories = ["https://github.com/apache/test-client"]
+        # Non-GitHub for the same reason - the client suite uploads over the API with no commit hash,
+        # and a GitHub project with nothing to compare against gets a concern the transcripts don't note
+        test_client_project.repositories = ["https://gitbox.apache.org/repos/asf/test-client.git"]
         await data.commit()
 
         # A podling equivalent, so we can exercise incubator/podling behaviours in tests
