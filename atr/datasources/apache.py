@@ -446,10 +446,9 @@ async def update_metadata(include_projects: bool = False) -> tuple[int, int]:
 
 
 def _coerce_https(url: str | None) -> str | None:
+    # Only the scheme changes - a host with "http" in it (httpcomponents, httpd) is left alone
     if type(url) is str:
-        if "http://" in url:
-            return url.replace("http", "https")
-        return url
+        return url.replace("http://", "https://", 1)
     return None
 
 

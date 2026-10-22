@@ -4,16 +4,72 @@
 
 {%- block description -%}Apache projects that have retired to the Attic.{%- endblock description -%}
 
+{% macro history(release_count, last_date) -%}
+  {%- if release_count -%}
+    {{ release_count }} release{{ "s" if release_count != 1 else "" }}{% if last_date %} &middot; last {{ last_date.strftime("%Y-%m-%d") }}{% endif %}
+  {%- else -%}
+    No catalogued releases
+  {%- endif -%}
+{%- endmacro %}
+
 {% block content %}
   <p class="mb-1"><a href="{{ root }}index.html" class="atr-back-link">&larr; Release catalog</a></p>
   <h1 class="mb-3">{{ committee.display_name }}</h1>
+  <p class="text-muted">
+    Projects that have retired to the Attic: each link opens the project's archived releases.
+  </p>
   {% if entries %}
-    <div class="list-group">
-      {% for name, href in entries %}
-        <a class="list-group-item list-group-item-action" href="{{ href }}">{{ name }}</a>
+    <div class="mb-3">
+      <input type="text"
+             id="project-filter"
+             aria-label="Committee or project name filter"
+             class="form-control d-inline-block w-auto" />
+      <button type="button" class="btn btn-primary" id="filter-button">Filter</button>
+    </div>
+    <div class="mb-3">
+      <p>
+        Total count: <span id="committee-count">{{ entries|length }}</span>
+      </p>
+    </div>
+    <div class="d-flex flex-column gap-2">
+      {% for entry in entries %}
+        {# The filter hides a card through its parent, so each one gets a wrapper of its own #}
+        <div>
+          <div class="card page-committee-card">
+            <div class="card-body py-2">
+              <div class="d-flex justify-content-between align-items-baseline flex-wrap gap-2">
+                <a href="{{ entry.href }}" class="card-title fs-5 mb-0 text-decoration-none">{{ entry.name }}</a>
+                <span class="text-muted small">
+                  {%- if entry.retired %}Retired {{ entry.retired.strftime("%Y") }} &middot; {% endif -%}
+                  {{ history(entry.release_count, entry.last_date) }}
+                </span>
+              </div>
+              {% if entry.subprojects %}
+                {# The names ride along as data so a search for a subproject finds its committee #}
+                <ul class="list-unstyled ms-3 mt-2 mb-0 small">
+                  {% for subproject in entry.subprojects %}
+                    <li class="d-flex justify-content-between flex-wrap gap-2" data-project-name="{{ subproject.name }}">
+                      <a href="{{ subproject.href }}">{{ subproject.name }}</a>
+                      <span class="text-muted">{{ history(subproject.release_count, subproject.last_date) }}</span>
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+            </div>
+          </div>
+        </div>
       {% endfor %}
     </div>
   {% else %}
     <p class="text-muted">No retired projects.</p>
   {% endif %}
 {% endblock content %}
+
+{% block scripts %}
+  <script src="{{ root }}assets/js/src/card-grid.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      initCardGrid({ cardSelector: ".page-committee-card", countId: "committee-count", noun: "committees" });
+    });
+  </script>
+{% endblock scripts %}

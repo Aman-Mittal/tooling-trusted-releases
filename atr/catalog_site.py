@@ -183,6 +183,26 @@ class _ProjectLink:
 
 
 @dataclasses.dataclass
+class _AtticProject:
+    # One retired project on the Attic page, opening at its archive
+    name: str
+    href: str
+    release_count: int
+    last_date: datetime.datetime | None
+
+
+@dataclasses.dataclass
+class _AtticEntry:
+    # A retired PMC (or one of the Attic's own projects), with the subprojects it kept
+    name: str
+    href: str
+    retired: datetime.datetime | None
+    release_count: int
+    last_date: datetime.datetime | None
+    subprojects: list[_AtticProject]
+
+
+@dataclasses.dataclass
 class _CommitteeSummary:
     release_count: int
     latest_date: datetime.datetime | None
@@ -194,6 +214,7 @@ class _SubprojectSummary:
     release_count: int
     latest_date: datetime.datetime | None
     has_archived: bool
+    archived_count: int
     # The most recent archived release's date, for a subproject with nothing current left
     last_archived_date: datetime.datetime | None
 
@@ -418,6 +439,61 @@ def _artifact_subpaths(version: api.CatalogVersion, pmc: str, project: str) -> I
     yield from _unique(derived)
 
 
+async def _attic_committee_entry(data: db.Session, committee: sql.Committee) -> _AtticEntry:
+    # The committee's own-named project is its TLP, the rest are its subprojects. With no TLP
+    # the entry opens at the committee page instead
+    members = sorted(committee.projects, key=lambda project: project.display_name.lower())
+    tlp = next((project for project in members if project.key == committee.key), None)
+    own = await _attic_project(data, tlp) if tlp is not None else None
+    subprojects = [await _attic_project(data, project) for project in members if project is not tlp]
+    counted = [own, *subprojects] if own is not None else subprojects
+    return _AtticEntry(
+        name=committee.display_name,
+        href=own.href if own is not None else f"../{committee.key}/index.html",
+        retired=committee.archived,
+        release_count=sum(project.release_count for project in counted),
+        last_date=max((project.last_date for project in counted if project.last_date is not None), default=None),
+        subprojects=subprojects,
+    )
+
+
+async def _attic_entries(
+    data: db.Session, projects: Sequence[sql.Project], committees: Sequence[sql.Committee]
+) -> list[_AtticEntry]:
+    # A retired PMC is filed either under the Attic itself or as a committee that kept its own
+    # key. The Attic's own projects have no committee date, so they're entries on their own
+    entries: list[_AtticEntry] = []
+    for project in projects:
+        own = await _attic_project(data, project)
+        entries.append(
+            _AtticEntry(
+                name=own.name,
+                href=own.href,
+                retired=None,
+                release_count=own.release_count,
+                last_date=own.last_date,
+                subprojects=[],
+            )
+        )
+    for committee in committees:
+        entries.append(await _attic_committee_entry(data, committee))
+    entries.sort(key=lambda entry: entry.name.lower())
+    return entries
+
+
+async def _attic_project(data: db.Session, project: sql.Project) -> _AtticProject:
+    # Current and archived releases both count - a retired project can still hold one that was
+    # never archived itself
+    summary = await _subproject_summary(data, project)
+    dates = [date for date in (summary.latest_date, summary.last_archived_date) if date is not None]
+    return _AtticProject(
+        name=project.display_name,
+        href=f"../{project.key}/archive.html",
+        release_count=summary.release_count + summary.archived_count,
+        last_date=max(dates, default=None),
+    )
+
+
 def _categories(commas: str | None) -> str | None:
     # ATR stores these comma-separated, sometimes with a space and sometimes without;
     # projects.json wants ", " between them. Placeholder tokens are dropped along the way.
@@ -494,10 +570,6 @@ async def _guarded_write(description: str, work: Awaitable[None]) -> None:
         await work
     except Exception:
         log.exception(f"Failed to render catalog site {description}")
-
-
-def _has_live_project(committee: sql.Committee) -> bool:
-    return any(project.status in _LIVE_PROJECT_STATUSES for project in committee.projects)
 
 
 def _heatmap_url(url: str | None) -> str | None:
@@ -736,6 +808,7 @@ async def _subproject_summary(data: db.Session, project: sql.Project) -> _Subpro
         release_count=len(current),
         latest_date=_latest_release_date(current),
         has_archived=bool(archived),
+        archived_count=len(archived),
         last_archived_date=_latest_release_date(archived),
     )
 
@@ -792,19 +865,13 @@ async def _write_assets(site_dir: safe.StatePath) -> None:
 
 
 async def _write_attic_index(
+    data: db.Session,
     site_dir: safe.StatePath,
     attic: sql.Committee,
     projects: Sequence[sql.Project],
     committees: Sequence[sql.Committee],
 ) -> None:
-    # A retired PMC is filed either under the Attic itself or as a committee that kept its own
-    # key. Either way it's the projects a reader wants, so both are flattened into one list by
-    # their "Apache ..." name, each opening at its archive.
-    retired_projects = list(projects)
-    for committee in committees:
-        retired_projects.extend(committee.projects)
-    entries = [(project.display_name, f"../{project.key}/archive.html") for project in retired_projects]
-    entries.sort(key=lambda entry: entry[0].lower())
+    entries = await _attic_entries(data, projects, committees)
     html = _ENVIRONMENT.get_template("attic.html").render(committee=attic, entries=entries, root="../")
     await _write(site_dir / attic.key / "index.html", html)
 
@@ -833,7 +900,7 @@ async def _write_committee_index(
         subprojects=current,
         archived_subprojects=archived,
         subproject_summaries=await _subproject_summaries(data, (*current, *archived)),
-        retired=not current,
+        retired=committee.is_archived,
         keys_url=paths.committee_keys_url(committee),
         root="../",
     )
@@ -922,12 +989,12 @@ async def _write_index_pages(data: db.Session, site_dir: safe.StatePath, committ
         elif committee.key == _ATTIC_COMMITTEE_KEY:
             attic = committee
         elif committee.is_podling:
-            (current_podlings if _has_live_project(committee) else retired_podlings).append(committee)
-        elif _has_live_project(committee):
-            current.append(committee)
-        else:
-            # Nothing left to release, so it belongs with the rest of the Attic
+            (retired_podlings if committee.is_archived else current_podlings).append(committee)
+        elif committee.is_archived:
+            # Retirement is the committee's own flag - a new PMC with no project yet is still current
             retired_committees.append(committee)
+        else:
+            current.append(committee)
     # Each index is written on its own, so a failure rendering one doesn't starve the
     # others - above all the front page, which comes last and is the page most missed.
     # The committee is still listed even if its own index failed to render this pass;
@@ -938,11 +1005,11 @@ async def _write_index_pages(data: db.Session, site_dir: safe.StatePath, committ
         )
         current.append(incubator)
     if attic is not None:
-        attic_index = _write_attic_index(site_dir, attic, list(attic.projects), retired_committees)
+        attic_index = _write_attic_index(data, site_dir, attic, list(attic.projects), retired_committees)
         await _guarded_write("Attic index", attic_index)
         current.append(attic)
-    # A committee whose projects have all retired keeps its pages, but drops off the
-    # front page, so the index stays a list of where releases are still coming from.
+    # A retired committee keeps its pages, but drops off the front page, so the index
+    # stays a list of where releases are still coming from.
     await _guarded_write("front page", _write_front_page(data, site_dir, committees, current))
 
 
