@@ -78,7 +78,7 @@ INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_ra
 # The resolver fetches the configured .rat-excludes URL and returns a hash of its contents, so a
 # change to the fetched file busts the cached result even though the URL string is unchanged
 INPUT_EXTRA_ARGS: Final[list[str]] = ["rat_excludes_hash", "rat_jar_name"]
-CHECK_VERSION: Final[str] = "8"
+CHECK_VERSION: Final[str] = "9"
 
 
 class RatError(RuntimeError):
@@ -118,8 +118,10 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 
     log.info(f"Checking RAT licenses for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
-    policy_excludes = project.policy_source_excludes_rat
-    url_excludes = await _fetch_url_excludes(project)
+    snapshot = await attestable.load(args.project_key, args.version_key, args.revision_number)
+    policy = snapshot.policy if snapshot else {}
+    policy_excludes = policy.get("source_excludes_rat") or []
+    url_excludes = await _fetch_url_excludes(policy.get("rat_excludes_url") or "")
 
     try:
         await _check_core(args, recorder, archive_dir, policy_excludes, url_excludes)
@@ -129,10 +131,10 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     return None
 
 
-async def _fetch_url_excludes(project: sql.Project) -> _UrlExcludes | None:
+async def _fetch_url_excludes(url: str) -> _UrlExcludes | None:
     # We fetch here as well as in the cache-key resolver - the resolver's fetch decides whether the
     # cached result still applies, and this one gets the rules we actually feed to RAT
-    url = project.policy_rat_excludes_url.strip()
+    url = url.strip()
     if not url:
         return None
     try:
