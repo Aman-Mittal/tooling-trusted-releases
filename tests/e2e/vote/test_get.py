@@ -28,7 +28,7 @@ def test_browse_files_link_visible(page_vote: Page) -> None:
 def test_curl_command_contains_expected_text(page_vote: Page) -> None:
     """The curl command should contain the expected curl invocation."""
     command_text = helpers.get_curl_command_text(page_vote)
-    expect(command_text).to_contain_text("curl -s https://")
+    expect(command_text).to_contain_text("curl -fsS https://")
     expect(command_text).to_contain_text("| sh")
 
 
