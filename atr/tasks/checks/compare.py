@@ -56,7 +56,7 @@ _PERMITTED_ADDED_PATHS: Final[dict[str, list[str]]] = {
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["github_tp_sha"]
-CHECK_VERSION: Final[str] = "7"
+CHECK_VERSION: Final[str] = "8"
 
 
 @dataclasses.dataclass
@@ -98,6 +98,7 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
 
     payload = await source.read(args.project_key, args.version_key, args.revision_number)
     repository, sha = payload.repository, payload.sha
+    tip = sha if payload.override else payload.default
     if not (repository and sha):
         # With several repositories the release level record is empty, and each archive says for itself
         declared = await source.archive(
@@ -113,7 +114,13 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
                     {"reason": reason, "repositories": list(payload.candidates), "commit": sha or None},
                 )
             return None
-        repository, sha = declared.repository, declared.commit
+        repository, sha, tip = declared.repository, declared.commit, None
+    if not await _in_history(repository, sha, tip):
+        await recorder.concern(
+            "Source commit is not in the history of its GitHub repository",
+            {"repository": repository, "commit": sha, "run_commit": tip},
+        )
+        return None
     try:
         outcome = await _compare_checkout_and_archive(args, recorder, repository, sha)
     except OSError as e:
@@ -136,6 +143,12 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
         archive_checkout=archive_dir,
     )
     return None
+
+
+def _branch_and_tag_wants(
+    refs: Mapping[dulwich.refs.Ref, dulwich.objects.ObjectID], depth: int | None = None
+) -> list[dulwich.objects.ObjectID]:
+    return [value for ref, value in refs.items() if ref.startswith((b"refs/heads/", b"refs/tags/"))]
 
 
 async def _checkout_github_source(repository: str, sha: str, checkout_dir: safe.StatePath) -> str | None:
@@ -365,6 +378,18 @@ def _ensure_clone_identity_env() -> None:
     os.environ["EMAIL"] = _DEFAULT_EMAIL
 
 
+def _fetch_history(repo_url: str, sha: str, tip: str | None, history_dir: str) -> bool:
+    repo = dulwich.porcelain.init(history_dir, bare=True)
+    git_client, path = dulwich.client.get_transport_and_path(repo_url, operation="pull")
+    determine_wants = DetermineWantsForSha(tip) if tip else _branch_and_tag_wants
+    try:
+        git_client.fetch(path, repo, determine_wants=determine_wants, filter_spec=b"tree:0")
+    finally:
+        with contextlib.suppress(Exception):
+            git_client.close()
+    return dulwich.objects.ObjectID(sha.encode("ascii")) in repo.object_store
+
+
 async def _find_archive_root(archive_path: safe.StatePath, extract_dir: safe.StatePath) -> ArchiveRootResult:
     entries = await aiofiles.os.listdir(extract_dir)
     directories: list[str] = []
@@ -392,6 +417,18 @@ async def _find_archive_root(archive_path: safe.StatePath, extract_dir: safe.Sta
         extra_entries=extra_entries,
     )
     return ArchiveRootResult(root=found_root, extra_entries=extra_entries)
+
+
+async def _in_history(repository: str, sha: str, tip: str | None) -> bool:
+    if sha == tip:
+        return True
+    if not repository.startswith("apache/"):
+        return False
+    tmp_dir = paths.get_tmp_dir()
+    await aiofiles.os.makedirs(tmp_dir, exist_ok=True)
+    async with util.async_temporary_directory(prefix="history-", dir=tmp_dir) as temp_dir:
+        repo_url = f"https://github.com/{repository}.git"
+        return await asyncio.to_thread(_fetch_history, repo_url, sha, tip, str(temp_dir))
 
 
 def _uncompared_reason(payload: atr.models.attestable.SourceV2) -> str | None:

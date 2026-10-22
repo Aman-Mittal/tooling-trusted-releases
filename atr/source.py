@@ -34,6 +34,8 @@ def advance(
 ) -> atr.models.attestable.SourceV2:
     source = source.model_copy()
     if payload is not None:
+        if len(source.candidates) < 2:
+            source.repository = payload.repository
         # The run's starting commit only describes the source when the workflow ran in the source repository
         source.default = payload.sha if (payload.repository == source.repository) else None
         # The payload sha is only the commit the run started from, so the workflow can tell us what it checked out
@@ -74,7 +76,8 @@ async def initial(
     if isinstance(previous, atr.models.attestable.AttestableV2) and (previous.source is not None):
         source = previous.source.model_copy()
         # Both follow the metadata, so a repository added or corrected since the last revision shows up
-        source.repository = repository(release.project)
+        if not (source.default and source.repository and (len(candidates) < 2)):
+            source.repository = repository(release.project)
         source.candidates = candidates
         return source
     source = atr.models.attestable.SourceV2(repository=repository(release.project), candidates=candidates)
@@ -101,6 +104,8 @@ async def inputs(
     values = {
         "source_repository": source.repository,
         "source_commit": source.sha,
+        "source_default": source.default or "",
+        "source_override": source.override or "",
         "source_candidates": ",".join(source.candidates),
     }
     if rel_path is not None:

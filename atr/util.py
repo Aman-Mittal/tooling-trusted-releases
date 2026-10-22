@@ -625,6 +625,8 @@ def concern_groups(info: "datatypes.PathInfo | None") -> list[ConcernGroup]:
     counts_by_checker: dict[str, int] = collections.defaultdict(int)
     for stat in info.checker_stats:
         count = stat.counts.get(sql.CheckResultStatus.CONCERN, 0)
+        if stat.checker == "atr.tasks.checks.compare.source_trees":
+            count += stat.counts.get(sql.CheckResultStatus.EXCEPTION, 0)
         if count > 0:
             counts_by_checker[stat.checker] += count
     for result in info.release_level_concerns:

@@ -60,3 +60,18 @@ def test_concern_groups_and_missing():
     assert util.missing_concern_groups(groups, [group.checker for group in groups]) == []
     assert util.missing_concern_groups(groups, [groups[0].checker]) == [groups[1], groups[2]]
     assert util.missing_concern_groups(groups, ["unknown.checker"]) == groups
+
+
+def test_concern_groups_count_compare_exceptions():
+    counts = collections.Counter({sql.CheckResultStatus.EXCEPTION: 2})
+    info = datatypes.PathInfo.model_construct(
+        checker_stats=[
+            datatypes.CheckerStats(checker="atr.tasks.checks.compare.source_trees", counts=counts, files={}),
+            datatypes.CheckerStats(checker="atr.tasks.checks.rat.check", counts=counts, files={}),
+        ],
+        release_level_concerns=[],
+    )
+
+    groups = util.concern_groups(info)
+
+    assert [(group.checker, group.count) for group in groups] == [("atr.tasks.checks.compare.source_trees", 2)]

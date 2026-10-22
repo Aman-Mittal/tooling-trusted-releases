@@ -1001,7 +1001,9 @@ class CommitteeParticipant(FoundationCommitter):
     async def __required_concern_groups(self, release: sql.Release) -> list[util.ConcernGroup]:
         # Avoid a filesystem walk when the DB has no concern rows at all
         check_results = await interaction.checks_for(
-            release, statuses=(sql.CheckResultStatus.CONCERN,), caller_data=self.__data
+            release,
+            statuses=(sql.CheckResultStatus.CONCERN, sql.CheckResultStatus.EXCEPTION),
+            caller_data=self.__data,
         )
         if not check_results:
             return []

@@ -27,6 +27,7 @@ import aiofiles.os
 import dulwich.client
 import dulwich.objects
 import dulwich.refs
+import dulwich.repo
 import pytest
 
 import atr.attestable
@@ -674,6 +675,28 @@ def test_compare_trees_rsync_trees_match(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert result.repo_only == set()
 
 
+@pytest.mark.parametrize(
+    ("name", "run_commit", "expected"),
+    [("base", "tip", True), ("side", "tip", False), ("base", None, True), ("side", None, False)],
+)
+def test_fetch_history_needs_run_ancestor_or_branch_or_tag(
+    tmp_path: pathlib.Path, name: str, run_commit: str | None, expected: bool
+) -> None:
+    origin = dulwich.repo.Repo.init_bare(str(tmp_path / "origin"), mkdir=True)
+    base = _make_commit(origin, b"base", [])
+    commits = {"base": base, "tip": _make_commit(origin, b"tip", [base]), "side": _make_commit(origin, b"side", [base])}
+    origin.refs[b"refs/heads/main"] = commits["tip"]
+    origin.refs[b"refs/pull/1/head"] = commits["side"]
+    (tmp_path / "history").mkdir()
+    tip = commits[run_commit].decode() if run_commit else None
+
+    found = atr.tasks.checks.compare._fetch_history(
+        str(tmp_path / "origin"), commits[name].decode(), tip, str(tmp_path / "history")
+    )
+
+    assert found is expected
+
+
 @pytest.mark.asyncio
 async def test_find_archive_root_accepts_any_single_directory(tmp_path: pathlib.Path) -> None:
     temp_dir = safe.StatePath(tmp_path)
@@ -791,6 +814,11 @@ async def test_find_archive_root_returns_none_when_no_directories(tmp_path: path
 
 
 @pytest.mark.asyncio
+async def test_in_history_needs_apache_repository() -> None:
+    assert not await atr.tasks.checks.compare._in_history("Berri-AI/test", "d" * 40, None)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("override", [None, "c" * 40])
 async def test_source_trees_creates_temp_workspace_and_cleans_up(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, override: str | None
@@ -896,6 +924,27 @@ async def test_source_trees_concern_when_uncomparable(
 
 
 @pytest.mark.asyncio
+async def test_source_trees_concern_when_declared_commit_outside_run_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = RecorderStub(True)
+    args = _make_args(recorder)
+    recorded = atr.models.attestable.AttestableV2(
+        source=atr.models.attestable.SourceV2(repository="apache/test", default="a" * 40, declared="d" * 40)
+    )
+    in_history = mock.AsyncMock(return_value=False)
+
+    monkeypatch.setattr(atr.attestable, "load", mock.AsyncMock(return_value=recorded))
+    monkeypatch.setattr(atr.tasks.checks.compare, "_in_history", in_history)
+    monkeypatch.setattr(atr.tasks.checks.compare, "_compare_checkout_and_archive", RaiseAsync("unexpected comparison"))
+
+    await atr.tasks.checks.compare.source_trees(args)
+
+    in_history.assert_awaited_once_with("apache/test", "d" * 40, "a" * 40)
+    assert [message for message, _ in recorder.concern_calls] == [
+        "Source commit is not in the history of its GitHub repository"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_source_trees_stays_quiet_without_github_repository(monkeypatch: pytest.MonkeyPatch) -> None:
     recorder = RecorderStub(True)
     args = _make_args(recorder)
@@ -930,8 +979,10 @@ async def test_source_trees_uses_declared_source(monkeypatch: pytest.MonkeyPatch
         source=atr.models.attestable.SourceV2(candidates=["apache/first", "apache/second"]),
     )
 
+    in_history = mock.AsyncMock(return_value=True)
     monkeypatch.setattr(atr.attestable, "load", mock.AsyncMock(return_value=recorded))
     monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(None))
+    monkeypatch.setattr(atr.tasks.checks.compare, "_in_history", in_history)
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
     monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
@@ -940,6 +991,7 @@ async def test_source_trees_uses_declared_source(monkeypatch: pytest.MonkeyPatch
 
     await atr.tasks.checks.compare.source_trees(args)
 
+    in_history.assert_awaited_once_with("apache/second", "d" * 40, None)
     assert (checkout.repository, checkout.sha) == ("apache/second", "d" * 40)
     assert recorder.concern_calls == []
     assert len(recorder.note_calls) == 1
@@ -1181,6 +1233,20 @@ def _make_args(recorder: atr.tasks.checks.Recorder) -> atr.tasks.checks.Function
         primary_rel_path=safe.RelPath("artifact.tar.gz"),
         extra_args={},
     )
+
+
+def _make_commit(repo: dulwich.repo.Repo, message: bytes, parents: list[bytes]) -> bytes:
+    tree = dulwich.objects.Tree()
+    repo.object_store.add_object(tree)
+    commit = dulwich.objects.Commit()
+    commit.tree = tree.id
+    commit.parents = parents
+    commit.author = commit.committer = b"A <a@example.org>"
+    commit.author_time = commit.commit_time = 0
+    commit.author_timezone = commit.commit_timezone = 0
+    commit.message = message
+    repo.object_store.add_object(commit)
+    return commit.id
 
 
 def _make_payload(

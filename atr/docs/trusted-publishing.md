@@ -219,7 +219,7 @@ There are a few things to be aware of when using these actions:
   as ATR records the release operations against that committer.
 * `upload-to-atr` uploads the `dist` directory by default, which you can change with the `src`
   input. It also sends ATR the commit that the artifacts were built from, which you can override
-  with the `source-commit` input.
+  with the `source-commit` input. ATR compares the source archives against that commit in the repository the workflow ran in, and records a concern unless the commit is the one the run started from or one of its ancestors.
 
 Each action's README has the full list of inputs and some example workflows. When you create a draft
 release in ATR, the upload page also shows an example workflow already filled in with your project
@@ -256,7 +256,7 @@ archive:
 
 Each call creates a new revision of the draft, so declare all of the archives in one call. The
 repository must be one that the project metadata lists, and each path must be a source archive in
-the draft. If you pass `expected_revision`, ATR refuses the call when the draft has changed since
+the draft. When ATR compares an archive, it also records a concern unless the repository is in the `apache` organisation and the commit is on one of its branches or tags. If you pass `expected_revision`, ATR refuses the call when the draft has changed since
 that revision. You can make the same call with a personal API token as `POST /api/release/source`,
 giving `project` in place of `publisher` and `jwt`.
 

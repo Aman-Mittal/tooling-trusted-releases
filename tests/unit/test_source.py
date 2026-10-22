@@ -32,7 +32,9 @@ def test_advance_ignores_run_commit_from_other_repository(
     repository: str, github_payload: github.TrustedPublisherPayload
 ):
     # A workflow may run somewhere other than the source repository, so its starting commit means nothing here
-    selected = atr.models.attestable.SourceV2(repository=repository, default="a" * 40, override="c" * 40)
+    selected = atr.models.attestable.SourceV2(
+        repository=repository, default="a" * 40, override="c" * 40, candidates=["apache/first", "apache/second"]
+    )
     result = source.advance(selected, github_payload, declared=safe.CommitHash("e" * 40))
     assert result.default is None
     assert result.override is None
@@ -92,7 +94,7 @@ async def test_initial_follows_metadata_not_policy_or_earlier_record():
         release_policy=sql.ReleasePolicy(github_repository_name="workflow-home"),
     )
     release = sql.Release(project=project, version="1.0")
-    recorded = atr.models.attestable.SourceV2(repository="apache/test", default="a" * 40, override="c" * 40)
+    recorded = atr.models.attestable.SourceV2(repository="apache/test", override="c" * 40)
     previous = atr.models.attestable.AttestableV2(source=recorded)
     selected = await source.initial(release, previous)
     assert selected.repository == "apache/moved"
@@ -112,6 +114,14 @@ async def test_initial_refreshes_candidates():
     assert selected.repository == ""
     assert selected.candidates == ["apache/first", "apache/second"]
     assert recorded.candidates == ["apache/first"]
+
+
+async def test_initial_keeps_workflow_repository(github_payload: github.TrustedPublisherPayload):
+    project = sql.Project(key="test", name="Test", repositories=["https://github.com/Berri-AI/test"])
+    release = sql.Release(project=project, version="1.0")
+    recorded = source.advance(atr.models.attestable.SourceV2(repository="Berri-AI/test"), github_payload)
+    selected = await source.initial(release, atr.models.attestable.AttestableV2(source=recorded))
+    assert (selected.repository, selected.sha) == (github_payload.repository, github_payload.sha)
 
 
 @pytest.mark.parametrize("recorded_hash", ["b" * 40, "c" * 40])
@@ -205,6 +215,8 @@ async def test_read_and_cache_inputs_use_requested_snapshot(
     assert await source.inputs(pk, vk, rev) == {
         "source_repository": "apache/test",
         "source_commit": "c" * 40,
+        "source_default": github_payload.sha,
+        "source_override": "c" * 40,
         "source_candidates": "",
     }
     attestable.load.assert_awaited_with(pk, vk, rev)
@@ -273,7 +285,13 @@ async def test_inputs_include_declaration(monkeypatch: pytest.MonkeyPatch):
         source=atr.models.attestable.SourceV2(candidates=["apache/first", "apache/second"]),
     )
     monkeypatch.setattr(attestable, "load", mock.AsyncMock(return_value=recorded))
-    common = {"source_repository": "", "source_commit": "", "source_candidates": "apache/first,apache/second"}
+    common = {
+        "source_repository": "",
+        "source_commit": "",
+        "source_default": "",
+        "source_override": "",
+        "source_candidates": "apache/first,apache/second",
+    }
     assert await source.archive(pk, vk, rev, "a.tar.gz") == declared
     assert await source.inputs(pk, vk, rev, rel_path="a.tar.gz") == {
         **common,
