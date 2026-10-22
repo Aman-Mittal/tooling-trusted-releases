@@ -148,6 +148,11 @@
                       {% endif %}
                     </summary>
                     <div class="p-2">
+                      {% if primary_result.checker.endswith("rat.check") %}
+                        <p class="mb-2">
+                          <a href="{{ as_url(get.result.excludes, project_key=project_key, version_key=version_key, check_id=primary_result.id) }}">View exclusions</a>
+                        </p>
+                      {% endif %}
                       {% if primary_result.checker.endswith("rat.check_licenses") %}
                         <div class="d-flex gap-3 mb-2">
                           <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle px-2 py-1">

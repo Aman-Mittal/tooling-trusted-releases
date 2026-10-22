@@ -381,6 +381,18 @@ async def load_checks(
     return {}
 
 
+async def load_rat_excludes(
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision_number: safe.RevisionNumber,
+) -> dict[str, models.RatExcludesRecordV2]:
+    file_path = attestable_checks_path(project_key, version_key, revision_number)
+    if not await aiofiles.os.path.isfile(file_path):
+        return {}
+    async with aiofiles.open(file_path, encoding="utf-8") as f:
+        return models.AttestableChecksV2.model_validate_json(await f.read()).rat_excludes
+
+
 def path_classification(attestable: models.Attestable, path_key: str) -> str | None:
     if isinstance(attestable, models.AttestableV2):
         entry = attestable.paths.get(path_key)
