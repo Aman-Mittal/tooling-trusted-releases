@@ -36,7 +36,7 @@ import re
 import shutil
 import urllib.parse
 import uuid
-from collections.abc import Awaitable, Container, Iterable, Iterator, Sequence
+from collections.abc import Awaitable, Container, Iterable, Iterator, Mapping, Sequence
 from typing import Any, Final
 
 import aiofiles.os
@@ -207,6 +207,8 @@ class _CommitteeSummary:
     release_count: int
     latest_date: datetime.datetime | None
     projects: list[_ProjectLink]
+    # Shown in place of the release count: the Incubator and Attic index committees, not releases
+    caption: str | None = None
 
 
 @dataclasses.dataclass
@@ -542,6 +544,11 @@ async def _committee_summaries(data: db.Session, committees: Sequence[sql.Commit
         )
         for key in (set(counts) | set(links))
     }
+
+
+def _counted(count: int, noun: str) -> str:
+    # The index cards' line under the title, e.g. "3 podlings" or "1 retired TLP"
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
 def _date_only(when: datetime.datetime | None) -> str | None:
@@ -941,9 +948,16 @@ async def _write_front_page(
     site_dir: safe.StatePath,
     all_committees: Sequence[sql.Committee],
     listed: Sequence[sql.Committee],
+    captions: Mapping[str, str],
 ) -> None:
     # Summaries cover every committee; only the still-releasing ones are listed.
     summaries = await _committee_summaries(data, all_committees)
+    for key, caption in captions.items():
+        summary = summaries.get(key)
+        if summary is None:
+            summaries[key] = _CommitteeSummary(release_count=0, latest_date=None, projects=[], caption=caption)
+        else:
+            summary.caption = caption
     await _write_root_index(site_dir, listed, summaries)
 
 
@@ -999,18 +1013,22 @@ async def _write_index_pages(data: db.Session, site_dir: safe.StatePath, committ
     # others - above all the front page, which comes last and is the page most missed.
     # The committee is still listed even if its own index failed to render this pass;
     # overwrite-in-place means an earlier copy is likely still served.
+    # The two index cards count what their pages list, where the other cards count releases
+    captions: dict[str, str] = {}
     if incubator is not None:
         await _guarded_write(
             "Incubator index", _write_incubator_index(site_dir, incubator, current_podlings, retired_podlings)
         )
         current.append(incubator)
+        captions[incubator.key] = _counted(len(current_podlings), "podling")
     if attic is not None:
         attic_index = _write_attic_index(data, site_dir, attic, list(attic.projects), retired_committees)
         await _guarded_write("Attic index", attic_index)
         current.append(attic)
+        captions[attic.key] = _counted(len(attic.projects) + len(retired_committees), "retired TLP")
     # A retired committee keeps its pages, but drops off the front page, so the index
     # stays a list of where releases are still coming from.
-    await _guarded_write("front page", _write_front_page(data, site_dir, committees, current))
+    await _guarded_write("front page", _write_front_page(data, site_dir, committees, current, captions))
 
 
 async def _write_project(

@@ -42,8 +42,12 @@
                   </h2>
                   {% if summary %}
                     <p class="text-muted small mb-0 mt-1">
-                      {{ summary.release_count }} {{ "release" if summary.release_count == 1 else "releases" }}
-                      {%- if summary.latest_date %} &middot; latest {{ summary.latest_date.strftime("%Y-%m-%d") }}{% endif %}
+                      {% if summary.caption %}
+                        {{ summary.caption }}
+                      {% else %}
+                        {{ summary.release_count }} {{ "release" if summary.release_count == 1 else "releases" }}
+                        {%- if summary.latest_date %} &middot; latest {{ summary.latest_date.strftime("%Y-%m-%d") }}{% endif %}
+                      {% endif %}
                     </p>
                     {# The projects ride along hidden so a search matches on their names too. A
                        project the search hits shows its own link, sitting above the card's stretched
