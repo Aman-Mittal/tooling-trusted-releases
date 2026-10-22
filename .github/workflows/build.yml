@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  UV_VERSION: '0.11.20'
+  UV_VERSION: '0.13.5'
 
 jobs:
   # Skip the build if this commit already passed on another branch.

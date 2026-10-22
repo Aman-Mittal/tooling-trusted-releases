@@ -6,7 +6,7 @@ ENV PIP_DEFAULT_TIMEOUT=100 \
     PYTHONUNBUFFERED=1 \
     UV_NO_DEV=1 \
     UV_SYSTEM_CERTS=true \
-    UV_VERSION=0.11.20
+    UV_VERSION=0.13.5
 
 RUN apk update && \
     apk add --no-cache \
