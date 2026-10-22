@@ -62,6 +62,9 @@ Each page in the catalog has a JSON counterpart, so that tools can consume the s
 * `project_releases.json` and `podling_releases.json`, at the root of the site, summarise every
   project and podling with its releases. They mirror the split, and many of the fields, of the ASF's
   existing `projects.json` and `podlings.json` files.
+* `activity.json` and `activity.yaml`, on each committee, are the committee's recent activity for
+  a board report: every current release, and every release archived in the last ninety days, as
+  two dated lists with the newest first.
 
 ## Package URLs
 

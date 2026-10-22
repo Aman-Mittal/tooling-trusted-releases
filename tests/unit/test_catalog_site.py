@@ -622,3 +622,73 @@ def test_release_feeds_split_podlings_out_and_sort_by_key() -> None:
     assert list(podlings) == ["amoro"]
     # The podling's maintainer names the PPMC and its own dev list.
     assert podlings["amoro"]["maintainer"] == [{"mbox": "mailto:dev@amoro.apache.org", "name": "Apache Amoro PPMC"}]
+
+
+def _release(
+    project_key: str,
+    version: str,
+    released: datetime.datetime | None,
+    *,
+    archived: datetime.datetime | None = None,
+    is_archived: bool = False,
+    phase: sql.ReleasePhase = sql.ReleasePhase.RELEASE,
+) -> sql.Release:
+    return sql.Release(
+        key=f"{project_key}-{version}",
+        project_key=project_key,
+        version=version,
+        phase=phase,
+        created=released or datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC),
+        released=released,
+        archived=archived,
+        is_archived=is_archived,
+    )
+
+
+def test_activity_document_lists_current_releases_and_recent_archivals_newest_first() -> None:
+    now = datetime.datetime(2026, 10, 22, 12, 0, tzinfo=datetime.UTC)
+    committee = _committee()
+    committee.projects = [_project(committee), _project(committee, key="example-sub", name="Apache Example Sub")]
+    day = datetime.timedelta(days=1)
+    releases = [
+        _release("example", "1.0.0", datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)),
+        _release("example", "2.0.0", datetime.datetime(2026, 9, 1, 15, tzinfo=datetime.UTC)),
+        # The same day as 2.0.0 but earlier in it, so the two order on project and version
+        _release("example-sub", "0.6.0", datetime.datetime(2026, 9, 1, 8, tzinfo=datetime.UTC)),
+        # Undated, so it sinks below the dated ones
+        _release("example", "0.1.0", None),
+        # Archived within the window, dated on the archival rather than the release
+        _release("example", "1.9.0", now - 400 * day, archived=now - 10 * day, is_archived=True),
+        _release("example-sub", "0.5.0", now - 300 * day, archived=now - 5 * day, is_archived=True),
+        # Archived too long ago, and archived without a date, are both left out
+        _release("example", "1.7.0", now - 500 * day, archived=now - 91 * day, is_archived=True),
+        _release("example", "1.6.0", now - 600 * day, is_archived=True),
+        # Not a release yet
+        _release("example", "3.0.0", None, phase=sql.ReleasePhase.RELEASE_CANDIDATE),
+    ]
+
+    document = catalog_site._activity_document(committee, releases, now)
+
+    assert document["pmc"] == "example"
+    assert document["name"] == "Example"
+    assert document["generated"] == "2026-10-22"
+    assert document["archived_since"] == "2026-07-24"
+    assert document["releases"] == [
+        {"date": "2026-09-01", "project": "example", "version": "2.0.0"},
+        {"date": "2026-09-01", "project": "example-sub", "version": "0.6.0"},
+        {"date": "2024-01-01", "project": "example", "version": "1.0.0"},
+        {"project": "example", "version": "0.1.0"},
+    ]
+    assert document["archivals"] == [
+        {"date": "2026-10-17", "project": "example-sub", "version": "0.5.0"},
+        {"date": "2026-10-12", "project": "example", "version": "1.9.0"},
+    ]
+
+
+def test_activity_document_with_nothing_to_report_still_has_its_header() -> None:
+    now = datetime.datetime(2026, 10, 22, 12, 0, tzinfo=datetime.UTC)
+
+    document = catalog_site._activity_document(_committee(), [], now)
+
+    assert document["releases"] == []
+    assert document["archivals"] == []

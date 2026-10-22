@@ -43,6 +43,7 @@ import aiofiles.os
 import aioshutil
 import jinja2
 import sqlmodel
+import strictyaml
 
 import atr.classify as classify
 import atr.cle as cle
@@ -172,6 +173,26 @@ _PROJECT_RELEASES_FILE: Final = "project_releases.json"
 # from projects.json. A podling graduates by ceasing to be one, at which point it moves to the
 # project file on the next rebuild.
 _PODLING_RELEASES_FILE: Final = "podling_releases.json"
+
+# Each committee's recent activity, written beside its page as JSON and YAML: every current
+# release, and the archivals of the last ninety days, project by project. A board report
+# covers a quarter, so that is how far back the archivals go.
+_ACTIVITY_FILE: Final = "activity"
+_ACTIVITY_ARCHIVAL_WINDOW: Final = datetime.timedelta(days=90)
+# strictyaml needs telling that an empty section is a list, or it refuses to write one
+_ACTIVITY_ENTRY: Final = strictyaml.Map(
+    {strictyaml.Optional("date"): strictyaml.Str(), "project": strictyaml.Str(), "version": strictyaml.Str()}
+)
+_ACTIVITY_SCHEMA: Final = strictyaml.Map(
+    {
+        "pmc": strictyaml.Str(),
+        "name": strictyaml.Str(),
+        "generated": strictyaml.Str(),
+        "archived_since": strictyaml.Str(),
+        "releases": strictyaml.EmptyList() | strictyaml.Seq(_ACTIVITY_ENTRY),
+        "archivals": strictyaml.EmptyList() | strictyaml.Seq(_ACTIVITY_ENTRY),
+    }
+)
 
 
 # Ordered on the name first, so a card's projects sort the way they read
@@ -327,16 +348,63 @@ async def regenerate_project(data: db.Session, project_key: str) -> None:
         return
     site_dir = paths.get_catalog_site_dir()
     await _write_assets(site_dir)
-    await _write_committee_index(data, committee, site_dir)
+    collected: dict[str, Sequence[sql.Release]] = {}
+    await _write_committee_index(data, committee, site_dir, collected)
     # A project sharing its committee's key is the committee page, so it's written already
     if project.key != committee.key:
-        await _write_project(data, committee, project, site_dir)
+        collected[project.key] = await _write_project(data, committee, project, site_dir)
     # A first release, or a last one archived, moves a committee on or off the front page
     # and between the Incubator's two columns, so the indexes are rebuilt every time too.
     await _write_index_pages(data, site_dir, committees)
     # The summary feed reflects the catalogue as a whole, so a change to any one project
     # refreshes it, the same as it refreshes the front page.
     await _guarded_write("release summary feeds", _write_project_releases(data, committees, site_dir))
+    await _guarded_write(
+        f"{committee.key} activity log", _write_committee_activity(data, committee, site_dir, collected)
+    )
+
+
+def _activity_document(
+    committee: sql.Committee, releases: Iterable[sql.Release], now: datetime.datetime
+) -> dict[str, Any]:
+    """One committee's activity: its current releases, and its archivals within the window.
+
+    Both lists run newest first, dated on the release or the archival as the case may be.
+    An undated release sits at the end of its list.
+    """
+    since = now - _ACTIVITY_ARCHIVAL_WINDOW
+    current: list[tuple[datetime.datetime | None, dict[str, str]]] = []
+    archived: list[tuple[datetime.datetime | None, dict[str, str]]] = []
+    for release in releases:
+        if release.phase != sql.ReleasePhase.RELEASE:
+            continue
+        if not release.is_archived:
+            current.append((release.released, _activity_event(release, release.released)))
+        elif (release.archived is not None) and (release.archived >= since):
+            archived.append((release.archived, _activity_event(release, release.archived)))
+    return {
+        "pmc": committee.key,
+        "name": committee.display_name,
+        "generated": _date_only(now),
+        "archived_since": _date_only(since),
+        "releases": _activity_newest_first(current),
+        "archivals": _activity_newest_first(archived),
+    }
+
+
+def _activity_event(release: sql.Release, when: datetime.datetime | None) -> dict[str, str]:
+    event = {"project": release.project_key, "version": release.version}
+    if (date := _date_only(when)) is not None:
+        event = {"date": date, **event}
+    return event
+
+
+def _activity_newest_first(events: list[tuple[datetime.datetime | None, dict[str, str]]]) -> list[dict[str, str]]:
+    # The log shows the day, so the order is by day too; events on the same day read in
+    # project and version order
+    events.sort(key=lambda item: (item[1]["project"], item[1]["version"]))
+    events.sort(key=lambda item: (item[0] or _EPOCH).date(), reverse=True)
+    return [event for _, event in events]
 
 
 def _artifact_classifier_combos(
@@ -884,12 +952,16 @@ async def _write_attic_index(
 
 
 async def _write_committee_index(
-    data: db.Session, committee: sql.Committee, site_dir: safe.StatePath
+    data: db.Session,
+    committee: sql.Committee,
+    site_dir: safe.StatePath,
+    collected: dict[str, Sequence[sql.Release]],
 ) -> list[sql.Project]:
     """Write the committee page, returning the projects that still need one of their own.
 
     A committee running a project of its own name has no separate page for it. That
     project's releases become the committee page, with the others listed beneath them.
+    The releases loaded for that page are added to `collected`, keyed by project.
     """
     projects = sorted(committee.projects, key=lambda project: project.display_name.lower())
     tlp = next((project for project in projects if project.key == committee.key), None)
@@ -897,7 +969,7 @@ async def _write_committee_index(
     current = [project for project in subprojects if project.status in _LIVE_PROJECT_STATUSES]
     archived = [project for project in subprojects if project.status not in _LIVE_PROJECT_STATUSES]
     if tlp is not None:
-        await _write_project(data, committee, tlp, site_dir, current, archived)
+        collected[tlp.key] = await _write_project(data, committee, tlp, site_dir, current, archived)
         return subprojects
     # Nothing of the committee's own to show, so the page is just the way down to
     # the projects, rendered by the same template with no project against it.
@@ -923,24 +995,53 @@ async def _write_committee_pages(
     """Write each committee's own page and those of its projects, returning the ones written."""
     written: list[sql.Committee] = []
     for committee in committees:
+        # The releases each project page loads, kept for the committee's activity log
+        collected: dict[str, Sequence[sql.Release]] = {}
         if committee.key in _INDEXING_COMMITTEE_KEYS:
             projects = list(committee.projects)
         else:
             try:
-                projects = await _write_committee_index(data, committee, site_dir)
+                projects = await _write_committee_index(data, committee, site_dir, collected)
             except Exception:
                 log.exception(f"Failed to render catalog site committee index for {committee.key}")
                 continue
         for project in projects:
             try:
-                await _write_project(data, committee, project, site_dir)
+                collected[project.key] = await _write_project(data, committee, project, site_dir)
             except Exception:
                 log.exception(f"Failed to render catalog site for project {project.key}")
         if committee.key in _INDEXING_COMMITTEE_KEYS:
             # These skip the committee index, which is where the tidying otherwise happens
             await _prune_directories(site_dir / committee.key, set())
+        else:
+            await _guarded_write(
+                f"{committee.key} activity log", _write_committee_activity(data, committee, site_dir, collected)
+            )
         written.append(committee)
     return written
+
+
+async def _write_committee_activity(
+    data: db.Session,
+    committee: sql.Committee,
+    site_dir: safe.StatePath,
+    collected: Mapping[str, Sequence[sql.Release]],
+) -> None:
+    """Write the committee's activity log in both formats, from the same document.
+
+    The page walk has already loaded each project's releases; only a project it didn't
+    reach is fetched here.
+    """
+    releases: list[sql.Release] = []
+    for project in committee.projects:
+        loaded = collected.get(project.key)
+        if loaded is None:
+            loaded = await data.release(project_key=project.key, _project=False, _committee=False).all()
+        releases.extend(loaded)
+    document = _activity_document(committee, releases, datetime.datetime.now(datetime.UTC))
+    committee_dir = site_dir / committee.key
+    await _write(committee_dir / f"{_ACTIVITY_FILE}.json", json.dumps(document, indent=2))
+    await _write(committee_dir / f"{_ACTIVITY_FILE}.yaml", strictyaml.as_document(document, _ACTIVITY_SCHEMA).as_yaml())
 
 
 async def _write_front_page(
@@ -1038,7 +1139,8 @@ async def _write_project(
     site_dir: safe.StatePath,
     subprojects: Sequence[sql.Project] = (),
     archived_subprojects: Sequence[sql.Project] = (),
-) -> None:
+) -> Sequence[sql.Release]:
+    """Write the project's pages, returning the releases loaded for them."""
     now = datetime.datetime.now(datetime.UTC)
     artifacts = await data.artifact(project_key=project.key, _release=True).all()
     project_cycles = await data.project_cycle(project_key=project.key).all()
@@ -1098,6 +1200,7 @@ async def _write_project(
         await _write_release(project_dir, committee, project, version, f"{root}../", document, snapshot)
     await _write_htaccess(project_dir, _project_htaccess(project.key, assembled.versions))
     await _prune_directories(project_dir, {str(version.version) for version in assembled.versions})
+    return releases
 
 
 async def _write_project_releases(
