@@ -275,7 +275,7 @@ class IgnoreAddArgs(schema.Strict):
     message_glob: str | None = schema.default_example(None, "sha512 matches for apache-example-0.0.1/*.xml")
 
     @pydantic.model_validator(mode="after")
-    def validate_patterns(self) -> "IgnoreAddArgs":
+    def validate_patterns(self) -> IgnoreAddArgs:
         for pattern in [
             self.release_glob,
             self.checker_glob,

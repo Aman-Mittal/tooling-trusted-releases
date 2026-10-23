@@ -61,7 +61,7 @@ def number(value: Any) -> float | None:
         return None
     try:
         number = float(value)
-    except (OverflowError, ValueError):
+    except OverflowError, ValueError:
         return None
     return number if math.isfinite(number) else None
 

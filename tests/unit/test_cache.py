@@ -40,14 +40,14 @@ class MockConfig:
 
 
 @pytest.fixture
-def mock_app(monkeypatch: "MonkeyPatch") -> MockApp:
+def mock_app(monkeypatch: MonkeyPatch) -> MockApp:
     app = MockApp()
     monkeypatch.setattr("asfquart.APP", app)
     return app
 
 
 @pytest.fixture
-def state_dir(tmp_path: pathlib.Path, monkeypatch: "MonkeyPatch") -> pathlib.Path:
+def state_dir(tmp_path: pathlib.Path, monkeypatch: MonkeyPatch) -> pathlib.Path:
     monkeypatch.setattr("atr.config.get", lambda: MockConfig(tmp_path))
     return tmp_path
 
@@ -96,7 +96,7 @@ def test_admins_cache_validates_with_good_data():
 
 @pytest.mark.asyncio
 async def test_admins_get_async_falls_back_to_file_without_app_context(
-    state_dir: pathlib.Path, monkeypatch: "MonkeyPatch"
+    state_dir: pathlib.Path, monkeypatch: MonkeyPatch
 ):
     def raise_runtime_error() -> frozenset[str]:
         raise RuntimeError("No app context")
@@ -178,7 +178,7 @@ async def test_admins_save_to_file_creates_parent_dirs(state_dir: pathlib.Path):
 
 @pytest.mark.asyncio
 async def test_admins_startup_load_calls_ldap_when_cache_missing(
-    state_dir: pathlib.Path, mock_app: MockApp, monkeypatch: "MonkeyPatch"
+    state_dir: pathlib.Path, mock_app: MockApp, monkeypatch: MonkeyPatch
 ):
     ldap_called = False
 
@@ -199,7 +199,7 @@ async def test_admins_startup_load_calls_ldap_when_cache_missing(
 
 @pytest.mark.asyncio
 async def test_admins_startup_load_handles_ldap_failure(
-    state_dir: pathlib.Path, mock_app: MockApp, monkeypatch: "MonkeyPatch"
+    state_dir: pathlib.Path, mock_app: MockApp, monkeypatch: MonkeyPatch
 ):
     async def mock_fetch_admin_users() -> frozenset[str]:
         raise ConnectionError("LDAP server unavailable")
@@ -215,7 +215,7 @@ async def test_admins_startup_load_handles_ldap_failure(
 
 @pytest.mark.asyncio
 async def test_admins_startup_load_uses_cache_when_present(
-    state_dir: pathlib.Path, mock_app: MockApp, monkeypatch: "MonkeyPatch"
+    state_dir: pathlib.Path, mock_app: MockApp, monkeypatch: MonkeyPatch
 ):
     ldap_called = False
 
@@ -251,7 +251,7 @@ async def test_email_uid_read_ignores_empty_disk_cache(state_dir: pathlib.Path):
 
 @pytest.mark.asyncio
 async def test_email_uid_refresh_refuses_empty_ldap_mapping(
-    state_dir: pathlib.Path, mock_app: MockApp, monkeypatch: "MonkeyPatch"
+    state_dir: pathlib.Path, mock_app: MockApp, monkeypatch: MonkeyPatch
 ):
     async def email_to_uid_map() -> dict[str, str]:
         return {}
@@ -269,7 +269,7 @@ async def test_email_uid_refresh_refuses_empty_ldap_mapping(
 
 @pytest.mark.asyncio
 async def test_email_uid_startup_load_refreshes_ldap_instead_of_reading_disk(
-    state_dir: pathlib.Path, mock_app: MockApp, monkeypatch: "MonkeyPatch"
+    state_dir: pathlib.Path, mock_app: MockApp, monkeypatch: MonkeyPatch
 ):
     old_hash = cache._email_uid_hash("old@example.org")
     new_hash = cache._email_uid_hash("new@example.org")

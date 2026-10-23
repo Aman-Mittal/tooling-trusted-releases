@@ -66,13 +66,13 @@ class AddOpenPGPKeyForm(form.Form):
     )
 
     @pydantic.model_validator(mode="after")
-    def validate_at_least_one_committee(self) -> "AddOpenPGPKeyForm":
+    def validate_at_least_one_committee(self) -> AddOpenPGPKeyForm:
         if not self.selected_committees:
             raise ValueError("You must select at least one committee to associate with this key")
         return self
 
     @pydantic.model_validator(mode="after")
-    def validate_exactly_one_key_source(self) -> "AddOpenPGPKeyForm":
+    def validate_exactly_one_key_source(self) -> AddOpenPGPKeyForm:
         has_text = bool(self.public_key.strip())
         has_file = self.public_key_file is not None
         if has_text and has_file:
@@ -158,7 +158,7 @@ class UploadFileForm(form.Form):
     )
 
     @pydantic.model_validator(mode="after")
-    def validate_key_required(self) -> "UploadFileForm":
+    def validate_key_required(self) -> UploadFileForm:
         if not self.key:
             raise ValueError("A KEYS file is required")
         return self

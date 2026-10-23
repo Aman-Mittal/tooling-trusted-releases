@@ -46,7 +46,7 @@ class WorkflowKeySession:
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("_patch_ldap_active")
-async def test_begin_auth_allows_active_user(monkeypatch: "MonkeyPatch"):
+async def test_begin_auth_allows_active_user(monkeypatch: MonkeyPatch):
     server = _make_server()
     server._conn = _make_conn()
     mock_data = mock.MagicMock()
@@ -68,7 +68,7 @@ async def test_begin_auth_rejects_disabled_user():
 
 
 @pytest.mark.asyncio
-async def test_begin_auth_skips_ldap_for_github(monkeypatch: "MonkeyPatch"):
+async def test_begin_auth_skips_ldap_for_github(monkeypatch: MonkeyPatch):
     is_active_mock = mock.AsyncMock(return_value=False)
     monkeypatch.setattr("atr.ldap.is_active", is_active_mock)
     server = _make_server()
@@ -98,7 +98,7 @@ async def test_step_02_rejects_disabled_account():
 
 
 @pytest.mark.asyncio
-async def test_step_04_allows_workflow_key_for_its_own_project(monkeypatch: "MonkeyPatch"):
+async def test_step_04_allows_workflow_key_for_its_own_project(monkeypatch: MonkeyPatch):
     server = _make_workflow_server("test")
     mock_data = mock.MagicMock()
     mock_data.project.return_value.get = mock.AsyncMock(return_value=None)
@@ -112,7 +112,7 @@ async def test_step_04_allows_workflow_key_for_its_own_project(monkeypatch: "Mon
 
 
 @pytest.mark.asyncio
-async def test_step_04_allows_read_only_workflow_key_to_download(monkeypatch: "MonkeyPatch"):
+async def test_step_04_allows_read_only_workflow_key_to_download(monkeypatch: MonkeyPatch):
     server = _make_workflow_server("test")
     server._github_read_only = True
     mock_data = mock.MagicMock()
@@ -127,7 +127,7 @@ async def test_step_04_allows_read_only_workflow_key_to_download(monkeypatch: "M
 
 
 @pytest.mark.asyncio
-async def test_step_04_rejects_read_only_workflow_key_upload(monkeypatch: "MonkeyPatch"):
+async def test_step_04_rejects_read_only_workflow_key_upload(monkeypatch: MonkeyPatch):
     server = _make_workflow_server("test")
     server._github_read_only = True
     session = mock.MagicMock()
@@ -140,7 +140,7 @@ async def test_step_04_rejects_read_only_workflow_key_upload(monkeypatch: "Monke
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("is_read_request", [True, False])
-async def test_step_04_rejects_workflow_key_for_other_project(monkeypatch: "MonkeyPatch", is_read_request: bool):
+async def test_step_04_rejects_workflow_key_for_other_project(monkeypatch: MonkeyPatch, is_read_request: bool):
     server = _make_workflow_server("test")
     session = mock.MagicMock()
     monkeypatch.setattr("atr.db.session", session)
@@ -152,7 +152,7 @@ async def test_step_04_rejects_workflow_key_for_other_project(monkeypatch: "Monk
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("_patch_ldap_active")
-async def test_validate_public_key_allows_active_workflow_user(monkeypatch: "MonkeyPatch"):
+async def test_validate_public_key_allows_active_workflow_user(monkeypatch: MonkeyPatch):
     server = _make_server()
     key = mock.MagicMock(spec=asyncssh.SSHKey)
     key.get_fingerprint.return_value = "SHA256:abc"
@@ -205,7 +205,7 @@ async def test_validate_public_key_allows_active_workflow_user(monkeypatch: "Mon
 
 
 @pytest.mark.asyncio
-async def test_validate_public_key_closes_db_session_before_ldap(monkeypatch: "MonkeyPatch"):
+async def test_validate_public_key_closes_db_session_before_ldap(monkeypatch: MonkeyPatch):
     server = _make_server()
     key = mock.MagicMock(spec=asyncssh.SSHKey)
     key.get_fingerprint.return_value = "SHA256:abc"
@@ -271,7 +271,7 @@ async def test_validate_public_key_closes_db_session_before_ldap(monkeypatch: "M
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("_patch_ldap_active")
 async def test_validate_public_key_marks_trusted_role_key_read_only(
-    monkeypatch: "MonkeyPatch", github_payload: github.TrustedPublisherPayload
+    monkeypatch: MonkeyPatch, github_payload: github.TrustedPublisherPayload
 ):
     server = _make_server()
     key = mock.MagicMock(spec=asyncssh.SSHKey)
@@ -292,7 +292,7 @@ async def test_validate_public_key_marks_trusted_role_key_read_only(
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("_patch_ldap_disabled")
-async def test_validate_public_key_rejects_disabled_workflow_user(monkeypatch: "MonkeyPatch"):
+async def test_validate_public_key_rejects_disabled_workflow_user(monkeypatch: MonkeyPatch):
     server = _make_server()
     key = mock.MagicMock(spec=asyncssh.SSHKey)
     key.get_fingerprint.return_value = "SHA256:abc"
@@ -342,10 +342,10 @@ def _make_workflow_server(project_key: str) -> ssh.SSHServer:
 
 
 @pytest.fixture
-def _patch_ldap_active(monkeypatch: "MonkeyPatch"):
+def _patch_ldap_active(monkeypatch: MonkeyPatch):
     monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(return_value=True))
 
 
 @pytest.fixture
-def _patch_ldap_disabled(monkeypatch: "MonkeyPatch"):
+def _patch_ldap_disabled(monkeypatch: MonkeyPatch):
     monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(return_value=False))

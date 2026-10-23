@@ -135,7 +135,7 @@ class Inventory:
     files: int = 0
     unidentified: int = 0
     purls: list[str] = dataclasses.field(default_factory=list)
-    licensed_components: list["LicensedComponent"] = dataclasses.field(default_factory=list)
+    licensed_components: list[LicensedComponent] = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass

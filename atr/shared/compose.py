@@ -35,7 +35,7 @@ class MoveFileForm(form.Form):
     target_directory: safe.RelDirPath = form.label("Target directory", required=True)
 
     @pydantic.model_validator(mode="after")
-    def validate_move(self) -> "MoveFileForm":
+    def validate_move(self) -> MoveFileForm:
         if not self.source_files:
             raise ValueError("Please select at least one file to move.")
 

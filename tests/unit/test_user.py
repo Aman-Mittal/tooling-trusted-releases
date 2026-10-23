@@ -46,7 +46,7 @@ class MockConfig:
 
 
 @pytest.fixture
-def mock_app(monkeypatch: "MonkeyPatch") -> MockApp:
+def mock_app(monkeypatch: MonkeyPatch) -> MockApp:
     app = MockApp()
     monkeypatch.setattr("asfquart.APP", app)
     return app
@@ -70,14 +70,14 @@ async def sqlite_global_db() -> AsyncIterator[None]:
 
 
 @pytest.mark.asyncio
-async def test_is_admin_async_returns_false_for_none(mock_app: MockApp, monkeypatch: "MonkeyPatch"):
+async def test_is_admin_async_returns_false_for_none(mock_app: MockApp, monkeypatch: MonkeyPatch):
     monkeypatch.setattr("atr.config.get", lambda: MockConfig())
     mock_app.extensions["admins"] = frozenset()
     assert await user.is_admin_async(None) is False
 
 
 @pytest.mark.asyncio
-async def test_is_admin_async_returns_true_for_cached_admin(mock_app: MockApp, monkeypatch: "MonkeyPatch"):
+async def test_is_admin_async_returns_true_for_cached_admin(mock_app: MockApp, monkeypatch: MonkeyPatch):
     user._get_additional_admin_users.cache_clear()
     monkeypatch.setattr("atr.config.get", lambda: MockConfig())
     mock_app.extensions["admins"] = frozenset({"async_admin"})
@@ -85,20 +85,20 @@ async def test_is_admin_async_returns_true_for_cached_admin(mock_app: MockApp, m
 
 
 @pytest.mark.asyncio
-async def test_is_admin_async_returns_true_for_test_user(mock_app: MockApp, monkeypatch: "MonkeyPatch"):
+async def test_is_admin_async_returns_true_for_test_user(mock_app: MockApp, monkeypatch: MonkeyPatch):
     user._get_additional_admin_users.cache_clear()
     monkeypatch.setattr("atr.config.get_mode", lambda: config.Mode.Test)
     mock_app.extensions["admins"] = frozenset()
     assert await user.is_admin_async("test") is True
 
 
-def test_is_admin_returns_false_for_none(mock_app: MockApp, monkeypatch: "MonkeyPatch"):
+def test_is_admin_returns_false_for_none(mock_app: MockApp, monkeypatch: MonkeyPatch):
     monkeypatch.setattr("atr.config.get", lambda: MockConfig())
     mock_app.extensions["admins"] = frozenset()
     assert user.is_admin(None) is False
 
 
-def test_is_admin_returns_false_for_test_user_when_not_allowed(mock_app: MockApp, monkeypatch: "MonkeyPatch"):
+def test_is_admin_returns_false_for_test_user_when_not_allowed(mock_app: MockApp, monkeypatch: MonkeyPatch):
     user._get_additional_admin_users.cache_clear()
     monkeypatch.setattr("atr.config.get_mode", lambda: config.Mode.Debug)
     monkeypatch.setattr("atr.config.get", lambda: MockConfig())
@@ -106,13 +106,13 @@ def test_is_admin_returns_false_for_test_user_when_not_allowed(mock_app: MockApp
     assert user.is_admin("test") is False
 
 
-def test_is_admin_returns_false_for_unknown_user(mock_app: MockApp, monkeypatch: "MonkeyPatch"):
+def test_is_admin_returns_false_for_unknown_user(mock_app: MockApp, monkeypatch: MonkeyPatch):
     monkeypatch.setattr("atr.config.get", lambda: MockConfig())
     mock_app.extensions["admins"] = frozenset({"alice", "bob"})
     assert user.is_admin("nobody") is False
 
 
-def test_is_admin_returns_true_for_additional_admin(mock_app: MockApp, monkeypatch: "MonkeyPatch"):
+def test_is_admin_returns_true_for_additional_admin(mock_app: MockApp, monkeypatch: MonkeyPatch):
     user._get_additional_admin_users.cache_clear()
     monkeypatch.setattr("atr.config.get", lambda: MockConfig(admin_users_additional="alice,bob"))
     mock_app.extensions["admins"] = frozenset()
@@ -120,14 +120,14 @@ def test_is_admin_returns_true_for_additional_admin(mock_app: MockApp, monkeypat
     assert user.is_admin("bob") is True
 
 
-def test_is_admin_returns_true_for_cached_admin(mock_app: MockApp, monkeypatch: "MonkeyPatch"):
+def test_is_admin_returns_true_for_cached_admin(mock_app: MockApp, monkeypatch: MonkeyPatch):
     user._get_additional_admin_users.cache_clear()
     monkeypatch.setattr("atr.config.get", lambda: MockConfig())
     mock_app.extensions["admins"] = frozenset({"cached_admin"})
     assert user.is_admin("cached_admin") is True
 
 
-def test_is_admin_returns_true_for_test_user_when_allowed(mock_app: MockApp, monkeypatch: "MonkeyPatch"):
+def test_is_admin_returns_true_for_test_user_when_allowed(mock_app: MockApp, monkeypatch: MonkeyPatch):
     user._get_additional_admin_users.cache_clear()
     monkeypatch.setattr("atr.config.get_mode", lambda: config.Mode.Test)
     mock_app.extensions["admins"] = frozenset()
@@ -135,7 +135,7 @@ def test_is_admin_returns_true_for_test_user_when_allowed(mock_app: MockApp, mon
 
 
 @pytest.mark.asyncio
-async def test_is_binding_for_release_uses_explicit_voter_and_vote_round(monkeypatch: "MonkeyPatch"):
+async def test_is_binding_for_release_uses_explicit_voter_and_vote_round(monkeypatch: MonkeyPatch):
     committee = sql.Committee(key="example", name="Example", committee_members=["alice"])
     podling = sql.Committee(key="podling", name="Podling", is_podling=True, committee_members=["ppmc"])
     incubator = sql.Committee(key="incubator", name="Incubator", committee_members=["ipmc"])

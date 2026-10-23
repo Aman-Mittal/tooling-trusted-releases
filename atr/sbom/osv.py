@@ -287,7 +287,7 @@ async def _request_json(
     for delay in _RETRY_DELAY_SECONDS:
         try:
             return await _request_json_once(session, method, url, payload)
-        except (TimeoutError, aiohttp.ClientConnectionError, aiohttp.ClientPayloadError):
+        except TimeoutError, aiohttp.ClientConnectionError, aiohttp.ClientPayloadError:
             await asyncio.sleep(delay)
         except aiohttp.ClientResponseError as e:
             if (e.status != 429) and (e.status < 500):

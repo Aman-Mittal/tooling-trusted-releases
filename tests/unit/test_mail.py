@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.asyncio
-async def test_address_objects_used_for_from_to_headers(monkeypatch: "MonkeyPatch") -> None:
+async def test_address_objects_used_for_from_to_headers(monkeypatch: MonkeyPatch) -> None:
     """Test that Address objects are used for From/To headers."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -111,7 +111,7 @@ async def test_bulk_mail_batches_recipients_and_reports_failures(monkeypatch, fa
 
 
 @pytest.mark.asyncio
-async def test_footer_auto_appended_to_body(monkeypatch: "MonkeyPatch") -> None:
+async def test_footer_auto_appended_to_body(monkeypatch: MonkeyPatch) -> None:
     """Test that AUTO category appends an automation footer without a user attribution."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -131,7 +131,7 @@ async def test_footer_auto_appended_to_body(monkeypatch: "MonkeyPatch") -> None:
 
 
 @pytest.mark.asyncio
-async def test_footer_user_appended_to_body(monkeypatch: "MonkeyPatch") -> None:
+async def test_footer_user_appended_to_body(monkeypatch: MonkeyPatch) -> None:
     """Test that USER category appends a footer attributing the sending user."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -151,7 +151,7 @@ async def test_footer_user_appended_to_body(monkeypatch: "MonkeyPatch") -> None:
 
 
 @pytest.mark.asyncio
-async def test_foundation_committer_send_dev_preserves_supplied_message_id(monkeypatch: "MonkeyPatch") -> None:
+async def test_foundation_committer_send_dev_preserves_supplied_message_id(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr("atr.storage.writers.mail.config.is_dev_environment", lambda: True)
     writer, write_as = _mail_writer()
 
@@ -172,7 +172,7 @@ async def test_foundation_committer_send_dev_preserves_supplied_message_id(monke
 
 
 @pytest.mark.asyncio
-async def test_foundation_committer_send_dev_rejects_invalid_message_id(monkeypatch: "MonkeyPatch") -> None:
+async def test_foundation_committer_send_dev_rejects_invalid_message_id(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr("atr.storage.writers.mail.config.is_dev_environment", lambda: True)
     writer, write_as = _mail_writer()
 
@@ -193,7 +193,7 @@ async def test_foundation_committer_send_dev_rejects_invalid_message_id(monkeypa
 
 @pytest.mark.asyncio
 async def test_foundation_committer_send_dev_uses_test_id_without_supplied_message_id(
-    monkeypatch: "MonkeyPatch",
+    monkeypatch: MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("atr.storage.writers.mail.config.is_dev_environment", lambda: True)
     writer, write_as = _mail_writer()
@@ -214,7 +214,7 @@ async def test_foundation_committer_send_dev_uses_test_id_without_supplied_messa
 
 
 @pytest.mark.asyncio
-async def test_foundation_committer_send_records_errors_in_audit_log(monkeypatch: "MonkeyPatch") -> None:
+async def test_foundation_committer_send_records_errors_in_audit_log(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr("atr.storage.writers.mail.config.is_dev_environment", lambda: False)
     monkeypatch.setattr(
         "atr.storage.writers.mail.mail.send",
@@ -240,7 +240,7 @@ async def test_foundation_committer_send_records_errors_in_audit_log(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_relay_reachable_false_when_connect_fails(monkeypatch: "MonkeyPatch") -> None:
+async def test_relay_reachable_false_when_connect_fails(monkeypatch: MonkeyPatch) -> None:
     smtp = mock.MagicMock()
     smtp.connect = mock.AsyncMock(side_effect=OSError("connection refused"))
     monkeypatch.setattr("atr.mail.aiosmtplib.SMTP", mock.MagicMock(return_value=smtp))
@@ -250,7 +250,7 @@ async def test_relay_reachable_false_when_connect_fails(monkeypatch: "MonkeyPatc
 
 
 @pytest.mark.asyncio
-async def test_relay_reachable_false_when_ehlo_fails(monkeypatch: "MonkeyPatch") -> None:
+async def test_relay_reachable_false_when_ehlo_fails(monkeypatch: MonkeyPatch) -> None:
     smtp = mock.MagicMock()
     smtp.connect = mock.AsyncMock()
     smtp.ehlo = mock.AsyncMock(side_effect=aiosmtplib.SMTPHeloError(550, "denied"))
@@ -261,7 +261,7 @@ async def test_relay_reachable_false_when_ehlo_fails(monkeypatch: "MonkeyPatch")
 
 
 @pytest.mark.asyncio
-async def test_relay_reachable_true_when_ehlo_succeeds(monkeypatch: "MonkeyPatch") -> None:
+async def test_relay_reachable_true_when_ehlo_succeeds(monkeypatch: MonkeyPatch) -> None:
     smtp = mock.MagicMock()
     smtp.connect = mock.AsyncMock()
     smtp.ehlo = mock.AsyncMock()
@@ -272,7 +272,7 @@ async def test_relay_reachable_true_when_ehlo_succeeds(monkeypatch: "MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_send_accepts_legitimate_message(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_accepts_legitimate_message(monkeypatch: MonkeyPatch) -> None:
     """Test that a legitimate message without CRLF is accepted."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -305,7 +305,7 @@ async def test_send_accepts_legitimate_message(monkeypatch: "MonkeyPatch") -> No
 
 
 @pytest.mark.asyncio
-async def test_send_accepts_message_with_reply_to(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_accepts_message_with_reply_to(monkeypatch: MonkeyPatch) -> None:
     """Test that a legitimate message with in_reply_to is accepted."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -333,7 +333,7 @@ async def test_send_accepts_message_with_reply_to(monkeypatch: "MonkeyPatch") ->
 
 
 @pytest.mark.asyncio
-async def test_send_bcc_in_envelope_not_in_headers(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_bcc_in_envelope_not_in_headers(monkeypatch: MonkeyPatch) -> None:
     """Test that BCC addresses are in the SMTP envelope but absent from all message headers."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -361,7 +361,7 @@ async def test_send_bcc_in_envelope_not_in_headers(monkeypatch: "MonkeyPatch") -
 
 
 @pytest.mark.asyncio
-async def test_send_cc_appears_in_header_and_envelope(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_cc_appears_in_header_and_envelope(monkeypatch: MonkeyPatch) -> None:
     """Test that CC addresses appear in the Cc header and the SMTP envelope."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -389,7 +389,7 @@ async def test_send_cc_appears_in_header_and_envelope(monkeypatch: "MonkeyPatch"
 
 
 @pytest.mark.asyncio
-async def test_send_empty_cc_bcc_omits_cc_header(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_empty_cc_bcc_omits_cc_header(monkeypatch: MonkeyPatch) -> None:
     """Test that omitting CC or BCC produces no Cc header and only To recipients in envelope."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -414,7 +414,7 @@ async def test_send_empty_cc_bcc_omits_cc_header(monkeypatch: "MonkeyPatch") -> 
 
 
 @pytest.mark.asyncio
-async def test_send_generated_message_id_round_trip(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_generated_message_id_round_trip(monkeypatch: MonkeyPatch) -> None:
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
 
@@ -433,7 +433,7 @@ async def test_send_generated_message_id_round_trip(monkeypatch: "MonkeyPatch") 
 
 
 @pytest.mark.asyncio
-async def test_send_handles_non_ascii_headers(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_handles_non_ascii_headers(monkeypatch: MonkeyPatch) -> None:
     """Test that non-ASCII characters in headers are handled correctly."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -464,7 +464,7 @@ async def test_send_handles_non_ascii_headers(monkeypatch: "MonkeyPatch") -> Non
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_bcc_header_injection(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_bcc_header_injection(monkeypatch: MonkeyPatch) -> None:
     """Test a realistic Bcc header injection attack scenario."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -489,7 +489,7 @@ async def test_send_rejects_bcc_header_injection(monkeypatch: "MonkeyPatch") -> 
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_case_insensitive_duplicate(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_case_insensitive_duplicate(monkeypatch: MonkeyPatch) -> None:
     """Test that duplicate detection is case-insensitive."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -509,7 +509,7 @@ async def test_send_rejects_case_insensitive_duplicate(monkeypatch: "MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_content_type_injection(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_content_type_injection(monkeypatch: MonkeyPatch) -> None:
     """Test injection attempting to override Content-Type header."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -534,7 +534,7 @@ async def test_send_rejects_content_type_injection(monkeypatch: "MonkeyPatch") -
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_cr_only_injection(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_cr_only_injection(monkeypatch: MonkeyPatch) -> None:
     """Test that injection with CR only (\\r) is also rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -559,7 +559,7 @@ async def test_send_rejects_cr_only_injection(monkeypatch: "MonkeyPatch") -> Non
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_crlf_in_bcc_address(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_crlf_in_bcc_address(monkeypatch: MonkeyPatch) -> None:
     """Test that CRLF injection in the BCC address field is rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -579,7 +579,7 @@ async def test_send_rejects_crlf_in_bcc_address(monkeypatch: "MonkeyPatch") -> N
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_crlf_in_cc_address(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_crlf_in_cc_address(monkeypatch: MonkeyPatch) -> None:
     """Test that CRLF injection in the CC address field is rejected.
 
     An attacker supplying CC addresses controls what goes into the Cc header,
@@ -603,7 +603,7 @@ async def test_send_rejects_crlf_in_cc_address(monkeypatch: "MonkeyPatch") -> No
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_crlf_in_from_address(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_crlf_in_from_address(monkeypatch: MonkeyPatch) -> None:
     """Test that CRLF injection in from address field is rejected.
 
     Note: The from_addr validation happens before EmailMessage processing,
@@ -629,7 +629,7 @@ async def test_send_rejects_crlf_in_from_address(monkeypatch: "MonkeyPatch") -> 
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_crlf_in_reply_to(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_crlf_in_reply_to(monkeypatch: MonkeyPatch) -> None:
     """Test that CRLF injection in in_reply_to field is rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -655,7 +655,7 @@ async def test_send_rejects_crlf_in_reply_to(monkeypatch: "MonkeyPatch") -> None
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_crlf_in_subject(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_crlf_in_subject(monkeypatch: MonkeyPatch) -> None:
     """Test that CRLF injection in subject field is rejected."""
     # Mock _send_many to ensure we never actually send emails
     mock_send_many = mock.AsyncMock(return_value=[])
@@ -681,7 +681,7 @@ async def test_send_rejects_crlf_in_subject(monkeypatch: "MonkeyPatch") -> None:
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_crlf_in_to_address(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_crlf_in_to_address(monkeypatch: MonkeyPatch) -> None:
     """Test that CRLF injection in to address field is rejected.
 
     Note: The _validate_recipient check happens before EmailMessage processing,
@@ -707,7 +707,7 @@ async def test_send_rejects_crlf_in_to_address(monkeypatch: "MonkeyPatch") -> No
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_duplicate_across_cc_and_bcc(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_duplicate_across_cc_and_bcc(monkeypatch: MonkeyPatch) -> None:
     """Test that the same address in CC and BCC is rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -728,7 +728,7 @@ async def test_send_rejects_duplicate_across_cc_and_bcc(monkeypatch: "MonkeyPatc
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_duplicate_across_to_and_bcc(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_duplicate_across_to_and_bcc(monkeypatch: MonkeyPatch) -> None:
     """Test that the same address in To and BCC is rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -748,7 +748,7 @@ async def test_send_rejects_duplicate_across_to_and_bcc(monkeypatch: "MonkeyPatc
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_duplicate_across_to_and_cc(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_duplicate_across_to_and_cc(monkeypatch: MonkeyPatch) -> None:
     """Test that the same address in To and CC is rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -768,7 +768,7 @@ async def test_send_rejects_duplicate_across_to_and_cc(monkeypatch: "MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_empty_to(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_empty_to(monkeypatch: MonkeyPatch) -> None:
     """Test that an empty To list is rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -812,7 +812,7 @@ def test_send_rejects_invalid_supplied_message_id(message_id: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_lf_only_injection(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_lf_only_injection(monkeypatch: MonkeyPatch) -> None:
     """Test that injection with LF only (\\n) is also rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -837,7 +837,7 @@ async def test_send_rejects_lf_only_injection(monkeypatch: "MonkeyPatch") -> Non
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_null_byte_in_bcc(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_null_byte_in_bcc(monkeypatch: MonkeyPatch) -> None:
     """Test that null bytes in the BCC field are rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -857,7 +857,7 @@ async def test_send_rejects_null_byte_in_bcc(monkeypatch: "MonkeyPatch") -> None
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_null_byte_in_body(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_null_byte_in_body(monkeypatch: MonkeyPatch) -> None:
     """Test that null bytes in body field are rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -876,7 +876,7 @@ async def test_send_rejects_null_byte_in_body(monkeypatch: "MonkeyPatch") -> Non
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_null_byte_in_cc(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_null_byte_in_cc(monkeypatch: MonkeyPatch) -> None:
     """Test that null bytes in the CC field are rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -896,7 +896,7 @@ async def test_send_rejects_null_byte_in_cc(monkeypatch: "MonkeyPatch") -> None:
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_null_byte_in_from_address(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_null_byte_in_from_address(monkeypatch: MonkeyPatch) -> None:
     """Test that null bytes in from address field are rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -915,7 +915,7 @@ async def test_send_rejects_null_byte_in_from_address(monkeypatch: "MonkeyPatch"
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_null_byte_in_reply_to(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_null_byte_in_reply_to(monkeypatch: MonkeyPatch) -> None:
     """Test that null bytes in in_reply_to field are rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -935,7 +935,7 @@ async def test_send_rejects_null_byte_in_reply_to(monkeypatch: "MonkeyPatch") ->
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_null_byte_in_subject(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_null_byte_in_subject(monkeypatch: MonkeyPatch) -> None:
     """Test that null bytes in subject field are rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -954,7 +954,7 @@ async def test_send_rejects_null_byte_in_subject(monkeypatch: "MonkeyPatch") -> 
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_null_byte_in_to_address(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_null_byte_in_to_address(monkeypatch: MonkeyPatch) -> None:
     """Test that null bytes in to address field are rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -973,7 +973,7 @@ async def test_send_rejects_null_byte_in_to_address(monkeypatch: "MonkeyPatch") 
 
 
 @pytest.mark.asyncio
-async def test_send_to_with_cc_in_envelope(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_to_with_cc_in_envelope(monkeypatch: MonkeyPatch) -> None:
     """Test that To and CC addresses both appear in the SMTP envelope."""
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
@@ -1001,7 +1001,7 @@ async def test_send_to_with_cc_in_envelope(monkeypatch: "MonkeyPatch") -> None:
 
 
 @pytest.mark.asyncio
-async def test_send_uses_supplied_message_id(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_uses_supplied_message_id(monkeypatch: MonkeyPatch) -> None:
     mock_send_many = mock.AsyncMock(return_value=[])
     monkeypatch.setattr("atr.mail._send_many", mock_send_many)
 

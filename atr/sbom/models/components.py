@@ -20,7 +20,7 @@ from __future__ import annotations
 import pydantic
 
 # pydantic resolves this annotation at runtime, so the import has to stay out of a type-checking block
-from . import licenses  # noqa: TC001
+from . import licenses
 from .base import Strict
 
 

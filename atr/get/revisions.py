@@ -113,7 +113,7 @@ async def selected(
     )
 
 
-def _render_files_diff(body: htm.Block, files_diff: "FilesDiff") -> None:
+def _render_files_diff(body: htm.Block, files_diff: FilesDiff) -> None:
     if not (files_diff.added or files_diff.removed or files_diff.modified):
         body.p(".fst-italic.text-muted.mt-2")["No file changes detected in this revision."]
         return
@@ -149,7 +149,7 @@ def _render_files_diff(body: htm.Block, files_diff: "FilesDiff") -> None:
 async def _render_page(
     release: sql.Release,
     phase_key: str,
-    revision_history: list[tuple[sql.Revision, "FilesDiff"]],
+    revision_history: list[tuple[sql.Revision, FilesDiff]],
     latest_revision_number: str | None,
     project_key: str,
     version_key: str,
@@ -193,7 +193,7 @@ async def _render_revision_actions(body: htm.Block, revision: sql.Revision, proj
 async def _render_revision_card(
     page: htm.Block,
     revision: sql.Revision,
-    files_diff: "FilesDiff",
+    files_diff: FilesDiff,
     latest_revision_number: str | None,
     phase_key: str,
     project_key: str,

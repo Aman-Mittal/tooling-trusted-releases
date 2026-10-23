@@ -55,7 +55,7 @@ class AddIgnoreForm(form.Form):
     message_glob: str = form.label("Message pattern", default="")
 
     @pydantic.model_validator(mode="after")
-    def validate_at_least_one_field(self) -> "AddIgnoreForm":
+    def validate_at_least_one_field(self) -> AddIgnoreForm:
         has_status = self.status != IgnoreStatus.NO_STATUS  # pyright: ignore[reportUnnecessaryComparison]
         if not any(
             [
@@ -99,7 +99,7 @@ class UpdateIgnoreForm(form.Form):
     message_glob: str = form.label("Message pattern", default="")
 
     @pydantic.model_validator(mode="after")
-    def validate_at_least_one_field(self) -> "UpdateIgnoreForm":
+    def validate_at_least_one_field(self) -> UpdateIgnoreForm:
         has_status = self.status != IgnoreStatus.NO_STATUS  # pyright: ignore[reportUnnecessaryComparison]
         if not any(
             [

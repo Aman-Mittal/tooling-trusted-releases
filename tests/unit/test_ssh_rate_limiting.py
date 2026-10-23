@@ -100,7 +100,7 @@ def test_connection_made_different_ips_are_independent():
     conn.disconnect.assert_not_called()
 
 
-def test_rate_limit_check_allows_after_window_expires(monkeypatch: "MonkeyPatch"):
+def test_rate_limit_check_allows_after_window_expires(monkeypatch: MonkeyPatch):
     current_time = [1000.0]
     monkeypatch.setattr("atr.ssh.time.monotonic", lambda: current_time[0])
     bucket: dict[str, collections.deque[float]] = {}

@@ -97,7 +97,7 @@ async def test_send_pat_notice_requires_admin_task_and_fixed_addressing(
 
 
 @pytest.mark.asyncio
-async def test_send_passes_message_id_to_mail_writer(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_passes_message_id_to_mail_writer(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(
         "atr.tasks.message.ldap.account_lookup",
         mock.AsyncMock(
@@ -129,7 +129,7 @@ async def test_send_passes_message_id_to_mail_writer(monkeypatch: "MonkeyPatch")
 
 
 @pytest.mark.asyncio
-async def test_send_raises_when_all_recipients_fail(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_raises_when_all_recipients_fail(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(
         "atr.tasks.message.ldap.account_lookup",
         mock.AsyncMock(
@@ -157,7 +157,7 @@ async def test_send_raises_when_all_recipients_fail(monkeypatch: "MonkeyPatch") 
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_banned_asf_account(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_banned_asf_account(monkeypatch: MonkeyPatch) -> None:
     """Test that a banned ASF account raises SendError."""
     monkeypatch.setattr(
         "atr.tasks.message.ldap.account_lookup",
@@ -176,7 +176,7 @@ async def test_send_rejects_banned_asf_account(monkeypatch: "MonkeyPatch") -> No
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_bare_invalid_asf_id(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_bare_invalid_asf_id(monkeypatch: MonkeyPatch) -> None:
     """Test that a bare ASF UID (no @) not found in LDAP raises SendError."""
     monkeypatch.setattr("atr.tasks.message.ldap.account_lookup", mock.AsyncMock(return_value=None))
 
@@ -185,7 +185,7 @@ async def test_send_rejects_bare_invalid_asf_id(monkeypatch: "MonkeyPatch") -> N
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_invalid_asf_id(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_rejects_invalid_asf_id(monkeypatch: MonkeyPatch) -> None:
     """Test that an ASF UID not found in LDAP raises SendError."""
     # ldap.account_lookup returns None for an unknown UID
     monkeypatch.setattr("atr.tasks.message.ldap.account_lookup", mock.AsyncMock(return_value=None))
@@ -198,7 +198,7 @@ async def test_send_rejects_invalid_asf_id(monkeypatch: "MonkeyPatch") -> None:
 @pytest.mark.parametrize("recipient_field", ["email_to", "email_cc", "email_bcc"])
 @pytest.mark.parametrize("recipient", ["otheruser@apache.org", "announce@example.org", "announce@notapache.org"])
 async def test_send_rejects_unauthorized_recipients(
-    monkeypatch: "MonkeyPatch", recipient_field: str, recipient: str
+    monkeypatch: MonkeyPatch, recipient_field: str, recipient: str
 ) -> None:
     monkeypatch.setattr(
         "atr.tasks.message.ldap.account_lookup",
@@ -220,7 +220,7 @@ async def test_send_rejects_unauthorized_recipients(
 
 
 @pytest.mark.asyncio
-async def test_send_returns_warnings_on_partial_failure(monkeypatch: "MonkeyPatch") -> None:
+async def test_send_returns_warnings_on_partial_failure(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(
         "atr.tasks.message.ldap.account_lookup",
         mock.AsyncMock(
@@ -254,9 +254,7 @@ async def test_send_returns_warnings_on_partial_failure(monkeypatch: "MonkeyPatc
 @pytest.mark.asyncio
 @pytest.mark.parametrize("recipient_field", ["email_to", "email_cc", "email_bcc"])
 @pytest.mark.parametrize("recipient", ["dev@project.apache.org", "validuser@apache.org", "announce@apache.org"])
-async def test_send_succeeds_with_valid_asf_id(
-    monkeypatch: "MonkeyPatch", recipient_field: str, recipient: str
-) -> None:
+async def test_send_succeeds_with_valid_asf_id(monkeypatch: MonkeyPatch, recipient_field: str, recipient: str) -> None:
     """A valid ASF sender can deliver to each permitted recipient in any envelope field."""
     # ldap.account_lookup returns a dict for a known UID
     monkeypatch.setattr(

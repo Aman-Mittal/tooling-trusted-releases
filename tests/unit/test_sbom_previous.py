@@ -44,7 +44,7 @@ class FakeResponse:
         self.content_length = sum(len(chunk) for chunk in chunks)
         self.content = FakeContent(chunks)
 
-    async def __aenter__(self) -> "FakeResponse":
+    async def __aenter__(self) -> FakeResponse:
         return self
 
     async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
@@ -59,7 +59,7 @@ class FakeSession:
         self._response = response
         self.get_kwargs: dict[str, object] | None = None
 
-    async def __aenter__(self) -> "FakeSession":
+    async def __aenter__(self) -> FakeSession:
         return self
 
     async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:

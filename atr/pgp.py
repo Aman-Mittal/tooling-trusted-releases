@@ -61,7 +61,7 @@ class Component:
     revoked: bool
     self_signatures: int
     other_signatures: int
-    facts: "SigningKeyFacts | None"
+    facts: SigningKeyFacts | None
 
 
 class LimitError(ValueError):

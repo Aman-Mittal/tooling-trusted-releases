@@ -1390,7 +1390,7 @@ class ReleaseManager(CommitteeParticipant):
         try:
             committee = await tabulate.vote_committee(thread_id, release)
             details = await tabulate.vote_details(committee, thread_id, release)
-        except (util.FetchError, ValueError):
+        except util.FetchError, ValueError:
             return False
         return details.passed
 

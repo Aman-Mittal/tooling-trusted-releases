@@ -32,7 +32,7 @@ class FakeResponse:
     def __init__(self, status: int) -> None:
         self.status = status
 
-    async def __aenter__(self) -> "FakeResponse":
+    async def __aenter__(self) -> FakeResponse:
         return self
 
     async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
@@ -44,7 +44,7 @@ class FakeSession:
         self.head_status = head_status
         self.head_urls: list[str] = []
 
-    async def __aenter__(self) -> "FakeSession":
+    async def __aenter__(self) -> FakeSession:
         return self
 
     async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
@@ -56,7 +56,7 @@ class FakeSession:
 
 
 class HangingResponse:
-    async def __aenter__(self) -> "HangingResponse":
+    async def __aenter__(self) -> HangingResponse:
         await asyncio.sleep(60)
         return self
 
@@ -65,7 +65,7 @@ class HangingResponse:
 
 
 class MixedSession:
-    async def __aenter__(self) -> "MixedSession":
+    async def __aenter__(self) -> MixedSession:
         return self
 
     async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:

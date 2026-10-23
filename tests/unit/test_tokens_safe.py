@@ -48,7 +48,7 @@ class FakeQuery:
     def __init__(self, tokens: list[sql.PersonalAccessToken]):
         self._tokens = tokens
 
-    def order_by(self, *_args: object) -> "FakeQuery":
+    def order_by(self, *_args: object) -> FakeQuery:
         return self
 
     async def all(self) -> list[sql.PersonalAccessToken]:

@@ -97,7 +97,7 @@ def bearer_subject(request: quart.Request) -> str | None:
     # the LDAP and PAT checks are left to authenticate, which still runs afterwards
     try:
         claims = _decode(_extract_bearer_token(request))
-    except (base.ASFQuartException, jwt.PyJWTError):
+    except base.ASFQuartException, jwt.PyJWTError:
         return None
     subject = claims.get("sub")
     return subject if isinstance(subject, str) else None

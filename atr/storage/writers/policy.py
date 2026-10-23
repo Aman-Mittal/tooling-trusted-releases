@@ -139,7 +139,7 @@ class ReleaseManager(CommitteeParticipant):
                 ),
             )
             atr_tags_yaml = strictyaml.load(form.file_tag_mappings, schema)
-        except (strictyaml.exceptions.YAMLValidationError, error.YAMLError):
+        except strictyaml.exceptions.YAMLValidationError, error.YAMLError:
             raise ValueError("Invalid file tag mappings")
         atr_tags_data = atr_tags_yaml.data
         if not isinstance(atr_tags_data, dict):

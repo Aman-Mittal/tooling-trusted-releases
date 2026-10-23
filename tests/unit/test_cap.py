@@ -46,7 +46,7 @@ class FakeResponse:
     async def text(self) -> str:
         return self._body
 
-    async def __aenter__(self) -> "FakeResponse":
+    async def __aenter__(self) -> FakeResponse:
         return self
 
     async def __aexit__(self, *args: object) -> bool:
@@ -63,7 +63,7 @@ class FakeSession:
     def post(self, url: str, **kwargs: object) -> FakeResponse:
         return self._response
 
-    async def __aenter__(self) -> "FakeSession":
+    async def __aenter__(self) -> FakeSession:
         return self
 
     async def __aexit__(self, *args: object) -> bool:
@@ -135,7 +135,7 @@ class FakeSystemService:
     def __init__(self, record: object):
         self.project_record_approval_outcome = record
 
-    async def __aenter__(self) -> "FakeSystemService":
+    async def __aenter__(self) -> FakeSystemService:
         return self
 
     async def __aexit__(self, *args: object) -> bool:
@@ -146,7 +146,7 @@ class FakeUserService:
     def __init__(self) -> None:
         self.notifications_create = mock.AsyncMock()
 
-    async def __aenter__(self) -> "FakeUserService":
+    async def __aenter__(self) -> FakeUserService:
         return self
 
     async def __aexit__(self, *args: object) -> bool:

@@ -82,7 +82,7 @@ class MockSafeData:
         self.merge = mock.AsyncMock(side_effect=self._merge)
         self.refresh = mock.AsyncMock()
 
-    def _add(self, new_revision: "FakeRevision") -> None:
+    def _add(self, new_revision: FakeRevision) -> None:
         self._new_revision = new_revision
 
     async def _flush(self) -> None:

@@ -290,7 +290,7 @@ class _ProjectQuery:
         self._committee_projects = committee_projects
         self._key: str | None = None
 
-    def __call__(self, key: str | None = None, **_kwargs: object) -> "_ProjectQuery":
+    def __call__(self, key: str | None = None, **_kwargs: object) -> _ProjectQuery:
         self._key = key
         return self
 

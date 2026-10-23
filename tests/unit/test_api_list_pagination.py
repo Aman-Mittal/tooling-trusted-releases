@@ -53,7 +53,7 @@ class MockDBSession:
         self._revision = revision
         self._releases = releases
 
-    async def __aenter__(self) -> "MockDBSession":
+    async def __aenter__(self) -> MockDBSession:
         return self
 
     async def __aexit__(self, _exc_type: object, _exc: object, _tb: object) -> bool:

@@ -59,7 +59,7 @@ def get_short_commit_hash(project_root_path: str) -> str:
             check=True,
         )
         return process.stdout.strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except subprocess.CalledProcessError, FileNotFoundError:
         # Return a placeholder if the git command fails
         return "00000000"
 

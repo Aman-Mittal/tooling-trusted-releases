@@ -126,10 +126,18 @@ addopts = "--ignore=tests/e2e"
 
 [tool.ruff]
 line-length = 120
-target-version = "py313"
+target-version = "py314"
 extend-exclude = [
     "node_modules",
 ]
+
+[tool.ruff.per-file-target-version]
+"migrations/versions/**" = "py313"
+"playwright/**" = "py313"
+"scripts/check_pth_files.py" = "py313"
+"scripts/interface_order.py" = "py313"
+"scripts/interface_privacy.py" = "py313"
+"tests/e2e/**" = "py313"
 
 [tool.ruff.lint]
 ignore = [
@@ -143,6 +151,9 @@ ignore = [
   "S607", # partial path
   "S608", # SQL string query
   "S704", # markupsafe
+  "TC001",
+  "TC002",
+  "TC003",
 ]
 select = [
   "A005",  # stdlib-module-shadowing
@@ -167,6 +178,7 @@ strict-checking = true
 "atr/analysis.py" = ["RUF001"]
 "atr/db/__init__.py" = ["C901"]
 "atr/models/session.py" = ["N815"]
+"atr/models/sql.py" = ["UP037", "UP045"]
 "atr/sbom/conformance.py" = ["C901"]
 "atr/sbom/licenses.py" = ["C901"]
 "migrations/env.py" = ["E402"]

@@ -251,7 +251,7 @@ class PropagationOutcome:
 
 @dataclasses.dataclass(frozen=True)
 class PropagationSummary:
-    target: "SvnPublishTarget"
+    target: SvnPublishTarget
     total: int
     reachable: int
     outcomes: list[PropagationOutcome]
@@ -619,7 +619,7 @@ def concern_acknowledgement_error(missing: Sequence[ConcernGroup]) -> str:
     return f"{CONCERN_ACKNOWLEDGEMENT_MESSAGE}: {', '.join(listed)}{suffix}"
 
 
-def concern_groups(info: "datatypes.PathInfo | None") -> list[ConcernGroup]:
+def concern_groups(info: datatypes.PathInfo | None) -> list[ConcernGroup]:
     if info is None:
         return []
     counts_by_checker: dict[str, int] = collections.defaultdict(int)
@@ -1049,7 +1049,7 @@ async def is_dir_resolve(path: os.PathLike) -> pathlib.Path | None:
         resolved_path = await asyncio.to_thread(pathlib.Path(path).resolve)
         if not await aiofiles.os.path.isdir(resolved_path):
             return None
-    except (FileNotFoundError, OSError):
+    except FileNotFoundError, OSError:
         return None
     return resolved_path
 
@@ -1270,7 +1270,7 @@ async def paths_recursive_all(base_path: os.PathLike) -> AsyncGenerator[pathlib.
         current_abs_item = queue.pop(0)
         try:
             resolved_current_abs_item = await asyncio.to_thread(current_abs_item.resolve)
-        except (FileNotFoundError, OSError):
+        except FileNotFoundError, OSError:
             continue
         if resolved_current_abs_item in visited_abs_paths:
             continue
@@ -1981,12 +1981,12 @@ def _thread_message_from_source(mid: str, content: bytes) -> dict[str, Any]:
     if date_raw:
         try:
             parsed_dt = email.utils.parsedate_to_datetime(str(date_raw))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             parsed_dt = None
         if parsed_dt is not None:
             try:
                 epoch = int(parsed_dt.timestamp())
-            except (OverflowError, OSError, ValueError):
+            except OverflowError, OSError, ValueError:
                 epoch = 0
 
     body_text = ""

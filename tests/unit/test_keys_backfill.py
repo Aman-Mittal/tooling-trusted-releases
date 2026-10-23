@@ -35,7 +35,7 @@ sys.modules["keys_backfill"] = keys_backfill
 spec.loader.exec_module(keys_backfill)
 
 
-def event(fingerprint: str, placements: frozenset[pgp.Placement], day: int, source: str) -> "keys_backfill.Event":
+def event(fingerprint: str, placements: frozenset[pgp.Placement], day: int, source: str) -> keys_backfill.Event:
     return keys_backfill.Event(
         updated=datetime.datetime(2020, 1, day, tzinfo=datetime.UTC),
         kind=keys_backfill._KIND_SVN,

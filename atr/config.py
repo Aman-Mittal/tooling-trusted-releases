@@ -50,7 +50,7 @@ def _config_secrets_get(secrets_path: str, key: str, default: str | None = None,
             raise ValueError(f"Secret value for {key} is not a string")
         try:
             decouple.RepositoryIni(secrets_path)[key]
-        except (FileNotFoundError, KeyError):
+        except FileNotFoundError, KeyError:
             pass
         else:
             logging.warning(f"Secret {key} from the environment overrides the value in {secrets_path}")
@@ -79,7 +79,7 @@ def _svn_loopback_host(host: str) -> bool:
         return False
 
 
-def _validate_no_root_secrets(conf: type["AppConfig"]) -> None:
+def _validate_no_root_secrets(conf: type[AppConfig]) -> None:
     if os.path.isfile(os.path.join(conf.STATE_DIR, "secrets.ini")):
         raise RuntimeError(
             "A secrets.ini file in the state directory root is no longer supported; "
@@ -87,7 +87,7 @@ def _validate_no_root_secrets(conf: type["AppConfig"]) -> None:
         )
 
 
-def _validate_state_dir(conf: type["AppConfig"]) -> None:
+def _validate_state_dir(conf: type[AppConfig]) -> None:
     state_dir = pathlib.Path(conf.STATE_DIR).resolve()
     for path in sandbox.SYSTEM_PATHS:
         if state_dir.is_relative_to(path):
@@ -100,7 +100,7 @@ def _validate_svn_dist_public_url(url: str) -> None:
         raise RuntimeError("SVN_DIST_PUBLIC_URL must be an atr or release dist URL")
 
 
-def _validate_svn_publish(conf: type["AppConfig"]) -> None:
+def _validate_svn_publish(conf: type[AppConfig]) -> None:
     if not conf.SVN_PUBLISH_URL:
         raise RuntimeError("SVN_PUBLISH_URL must be configured; in development, run make svn-dev-repo")
     if not conf.SVN_TOKEN:

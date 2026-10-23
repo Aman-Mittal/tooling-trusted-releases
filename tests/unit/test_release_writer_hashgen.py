@@ -32,7 +32,7 @@ class CheckResultQuery:
     def __init__(self, results: list[object]) -> None:
         self._results = results
 
-    def order_by(self, *args: object, **kwargs: object) -> "CheckResultQuery":
+    def order_by(self, *args: object, **kwargs: object) -> CheckResultQuery:
         return self
 
     async def all(self) -> list[object]:
@@ -56,7 +56,7 @@ class CheckResultSession:
     def release(self, **_kwargs: object) -> ReleaseQuery:
         return ReleaseQuery()
 
-    async def __aenter__(self) -> "CheckResultSession":
+    async def __aenter__(self) -> CheckResultSession:
         return self
 
     async def __aexit__(self, _exc_type, _exc, _tb) -> bool:

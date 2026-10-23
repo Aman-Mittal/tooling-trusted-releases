@@ -57,7 +57,7 @@ class EmailUidLookup:
         self._hashes = hashes
 
     @classmethod
-    def from_plain(cls, mapping: Mapping[str, str]) -> "EmailUidLookup":
+    def from_plain(cls, mapping: Mapping[str, str]) -> EmailUidLookup:
         return cls({_email_uid_hash(email): uid for email, uid in mapping.items() if email})
 
     def get(self, email: str) -> str | None:

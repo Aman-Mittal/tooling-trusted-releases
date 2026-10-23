@@ -153,7 +153,7 @@ class PersonalAccessTokenSafe(schema.Strict):
     last_used: datetime.datetime | None
 
     @classmethod
-    def from_sql(cls, token: sql.PersonalAccessToken) -> "PersonalAccessTokenSafe":
+    def from_sql(cls, token: sql.PersonalAccessToken) -> PersonalAccessTokenSafe:
         if token.id is None:
             raise ValueError("PAT must have an ID before being returned")
         return cls(

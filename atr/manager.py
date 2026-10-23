@@ -525,7 +525,7 @@ def _live_process_group_members(pgid: int) -> list[int]:
         try:
             if (os.getpgid(process.pid) == pgid) and (process.status() != psutil.STATUS_ZOMBIE):
                 members.append(process.pid)
-        except (OSError, psutil.Error):
+        except OSError, psutil.Error:
             continue
     return members
 

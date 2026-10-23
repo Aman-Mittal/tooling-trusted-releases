@@ -1228,7 +1228,7 @@ def vote_end_get(latest_vote_task: sql.Task | None) -> datetime.datetime | None:
     try:
         naive = datetime.datetime.strptime(result.vote_end, "%Y-%m-%d %H:%M:%S UTC")
         return naive.replace(tzinfo=datetime.UTC)
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         return None
 
 

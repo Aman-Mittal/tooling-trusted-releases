@@ -142,7 +142,7 @@ def _maybe_json(value: str | None) -> object:
         return None
     try:
         return json.loads(value)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return value
 
 

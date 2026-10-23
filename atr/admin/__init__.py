@@ -2876,7 +2876,7 @@ async def _system_performance_tab() -> htm.Element:
                         "timestamp": line.split(" - ")[0],
                     }
                 )
-            except (ValueError, IndexError):
+            except ValueError, IndexError:
                 log.error(f"Error parsing line: {line}")
                 continue
 

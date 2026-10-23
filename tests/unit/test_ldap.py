@@ -70,7 +70,7 @@ def ldap_configured() -> bool:
 
 
 @pytest.mark.asyncio
-async def test_account_lookup_raises_when_ldap_unavailable(monkeypatch: "MonkeyPatch"):
+async def test_account_lookup_raises_when_ldap_unavailable(monkeypatch: MonkeyPatch):
     def failed_search(params: ldap.SearchParameters) -> None:
         params.failed = True
         params.err_msg = "An unexpected error occurred: connection refused"
@@ -83,7 +83,7 @@ async def test_account_lookup_raises_when_ldap_unavailable(monkeypatch: "MonkeyP
 
 @pytest.mark.asyncio
 async def test_admins_startup_load_fetches_real_admins(
-    ldap_configured: bool, tmp_path: pathlib.Path, monkeypatch: "MonkeyPatch"
+    ldap_configured: bool, tmp_path: pathlib.Path, monkeypatch: MonkeyPatch
 ):
     _skip_if_unavailable(ldap_configured)
 
@@ -176,7 +176,7 @@ async def test_fetch_admin_users_returns_reasonable_count(ldap_configured: bool)
 
 
 @pytest.mark.asyncio
-async def test_github_to_apache_raises_when_ldap_unavailable(monkeypatch: "MonkeyPatch"):
+async def test_github_to_apache_raises_when_ldap_unavailable(monkeypatch: MonkeyPatch):
     def failed_search(params: ldap.SearchParameters) -> None:
         params.failed = True
         params.err_msg = "An unexpected error occurred: connection refused"
@@ -186,7 +186,7 @@ async def test_github_to_apache_raises_when_ldap_unavailable(monkeypatch: "Monke
         await ldap.github_to_apache(12345)
 
 
-def test_group_membership_error_hides_ldap_base(monkeypatch: "MonkeyPatch"):
+def test_group_membership_error_hides_ldap_base(monkeypatch: MonkeyPatch):
     ldap_base = principal.LDAP_MEMBER_BASE
     error = RuntimeError(f"Search failed at {ldap_base}")
     ldap_search = mock.Mock(spec=ldap.Search)
@@ -213,7 +213,7 @@ async def test_handle_update_handles_invalid_payload():
 
 
 @pytest.mark.asyncio
-async def test_handle_update_ignores_no_ban_change(monkeypatch: "MonkeyPatch"):
+async def test_handle_update_ignores_no_ban_change(monkeypatch: MonkeyPatch):
     logged: list[str] = []
     auth_events: list[str] = []
     monkeypatch.setattr("atr.log.info", lambda msg: logged.append(msg))
@@ -228,7 +228,7 @@ async def test_handle_update_ignores_no_ban_change(monkeypatch: "MonkeyPatch"):
 
 
 @pytest.mark.asyncio
-async def test_handle_update_logs_reactivation(monkeypatch: "MonkeyPatch"):
+async def test_handle_update_logs_reactivation(monkeypatch: MonkeyPatch):
     logged: list[str] = []
     auth_events: list[str] = []
     monkeypatch.setattr("atr.log.info", lambda msg: logged.append(msg))
@@ -243,7 +243,7 @@ async def test_handle_update_logs_reactivation(monkeypatch: "MonkeyPatch"):
 
 
 @pytest.mark.asyncio
-async def test_handle_update_revokes_all_credentials(monkeypatch: "MonkeyPatch"):
+async def test_handle_update_revokes_all_credentials(monkeypatch: MonkeyPatch):
     logged, auth_events = _setup_ban_mocks(monkeypatch, session_count=2, token_count=3, ssh_key_count=1)
 
     payload = _make_pubsub_payload(uid="baduser", old_banned=[], new_banned=["yes"])
@@ -264,7 +264,7 @@ async def test_handle_update_revokes_all_credentials(monkeypatch: "MonkeyPatch")
 )
 @pytest.mark.parametrize(("old_banned", "new_banned"), [([], []), (["yes"], []), ([], ["yes"])])
 async def test_handle_update_revokes_all_credentials_on_delete(
-    monkeypatch: "MonkeyPatch",
+    monkeypatch: MonkeyPatch,
     old_banned: list[str],
     new_banned: list[str],
     tokens: list[object],
@@ -293,7 +293,7 @@ async def test_handle_update_revokes_all_credentials_on_delete(
 
 
 @pytest.mark.asyncio
-async def test_handle_update_revokes_only_sessions_when_no_keys_or_tokens(monkeypatch: "MonkeyPatch"):
+async def test_handle_update_revokes_only_sessions_when_no_keys_or_tokens(monkeypatch: MonkeyPatch):
     _logged, auth_events = _setup_ban_mocks(monkeypatch, session_count=1, token_count=0, ssh_key_count=0)
 
     payload = _make_pubsub_payload(uid="user1", old_banned=[], new_banned=["yes"])
@@ -305,7 +305,7 @@ async def test_handle_update_revokes_only_sessions_when_no_keys_or_tokens(monkey
 
 
 @pytest.mark.asyncio
-async def test_handle_update_skips_revoke_logs_when_nothing_to_revoke(monkeypatch: "MonkeyPatch"):
+async def test_handle_update_skips_revoke_logs_when_nothing_to_revoke(monkeypatch: MonkeyPatch):
     _logged, auth_events = _setup_ban_mocks(monkeypatch, session_count=0, token_count=0, ssh_key_count=0)
 
     payload = _make_pubsub_payload(uid="nouser", old_banned=[], new_banned=["yes"])
@@ -318,7 +318,7 @@ async def test_handle_update_skips_revoke_logs_when_nothing_to_revoke(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_is_active_raises_when_ldap_unavailable(monkeypatch: "MonkeyPatch"):
+async def test_is_active_raises_when_ldap_unavailable(monkeypatch: MonkeyPatch):
     monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: ("dn", "pw"))
     monkeypatch.setattr("atr.config.is_test_mode", lambda: True)
     monkeypatch.setattr("atr.ldap.account_lookup", mock.AsyncMock(side_effect=ldap.UnavailableError("down")))
@@ -327,7 +327,7 @@ async def test_is_active_raises_when_ldap_unavailable(monkeypatch: "MonkeyPatch"
 
 
 @pytest.mark.asyncio
-async def test_is_active_returns_false_for_banned_account(monkeypatch: "MonkeyPatch"):
+async def test_is_active_returns_false_for_banned_account(monkeypatch: MonkeyPatch):
     account = ldap.Result.model_validate(
         {"dn": "uid=bad,ou=people,dc=apache,dc=org", "uid": ["bad"], "asf-banned": ["yes"]}
     )
@@ -338,14 +338,14 @@ async def test_is_active_returns_false_for_banned_account(monkeypatch: "MonkeyPa
 
 
 @pytest.mark.asyncio
-async def test_is_active_returns_false_for_test_banned_user_when_tests_allowed(monkeypatch: "MonkeyPatch"):
+async def test_is_active_returns_false_for_test_banned_user_when_tests_allowed(monkeypatch: MonkeyPatch):
     monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: ("dn", "pw"))
     monkeypatch.setattr("atr.config.is_test_mode", lambda: True)
     assert await ldap.is_active("test-banned") is False
 
 
 @pytest.mark.asyncio
-async def test_is_active_returns_false_when_account_not_found(monkeypatch: "MonkeyPatch"):
+async def test_is_active_returns_false_when_account_not_found(monkeypatch: MonkeyPatch):
     monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: ("dn", "pw"))
     monkeypatch.setattr("atr.config.is_test_mode", lambda: True)
     monkeypatch.setattr("atr.ldap.account_lookup", mock.AsyncMock(return_value=None))
@@ -353,7 +353,7 @@ async def test_is_active_returns_false_when_account_not_found(monkeypatch: "Monk
 
 
 @pytest.mark.asyncio
-async def test_is_active_returns_true_for_active_account(monkeypatch: "MonkeyPatch"):
+async def test_is_active_returns_true_for_active_account(monkeypatch: MonkeyPatch):
     account = ldap.Result(dn="uid=alice,ou=people,dc=apache,dc=org", uid=["alice"])
     monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: ("dn", "pw"))
     monkeypatch.setattr("atr.config.is_test_mode", lambda: True)
@@ -362,14 +362,14 @@ async def test_is_active_returns_true_for_active_account(monkeypatch: "MonkeyPat
 
 
 @pytest.mark.asyncio
-async def test_is_active_returns_true_for_test_user_when_tests_allowed(monkeypatch: "MonkeyPatch"):
+async def test_is_active_returns_true_for_test_user_when_tests_allowed(monkeypatch: MonkeyPatch):
     monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: ("dn", "pw"))
     monkeypatch.setattr("atr.config.is_test_mode", lambda: True)
     assert await ldap.is_active("test") is True
 
 
 @pytest.mark.asyncio
-async def test_is_active_returns_true_when_ldap_not_configured(monkeypatch: "MonkeyPatch"):
+async def test_is_active_returns_true_when_ldap_not_configured(monkeypatch: MonkeyPatch):
     monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: None)
     assert await ldap.is_active("anyone") is True
 
@@ -477,7 +477,7 @@ def test_search_core_sets_timeouts(authenticated: bool):
     assert isinstance(connection.call_args.kwargs["receive_timeout"], int)
 
 
-def test_search_sets_failed_on_exception(monkeypatch: "MonkeyPatch"):
+def test_search_sets_failed_on_exception(monkeypatch: MonkeyPatch):
     def broken_search_core(params: ldap.SearchParameters) -> None:
         raise ConnectionRefusedError("connection refused")
 
@@ -547,7 +547,7 @@ def _mock_db_session(token_items: list | None = None, ssh_key_items: list | None
 
 
 def _setup_ban_mocks(
-    monkeypatch: "MonkeyPatch",
+    monkeypatch: MonkeyPatch,
     session_count: int = 0,
     token_count: int = 0,
     ssh_key_count: int = 0,

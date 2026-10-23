@@ -68,6 +68,6 @@ class AnnounceForm(form.Form):
         return value
 
     @pydantic.model_validator(mode="after")
-    def _validate_recipients(self) -> "AnnounceForm":
+    def _validate_recipients(self) -> AnnounceForm:
         util.validate_email_recipients(self)
         return self

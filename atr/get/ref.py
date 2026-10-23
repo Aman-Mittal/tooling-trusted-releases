@@ -109,7 +109,7 @@ def _validate_and_resolve_path(rel_path: safe.RelPath, project_root: pathlib.Pat
     try:
         resolved_path = file_path.resolve()
         resolved_path.relative_to(project_root)
-    except (FileNotFoundError, ValueError):
+    except FileNotFoundError, ValueError:
         quart.abort(404)
 
     return resolved_path, str(validated_path)
