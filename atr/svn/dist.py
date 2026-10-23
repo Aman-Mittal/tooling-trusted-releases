@@ -42,9 +42,11 @@ _BARE_DIGIT_RE: Final[re.Pattern[str]] = re.compile(r"^\d$")
 # Splits a flat name-version; non-greedy so spark-4.1.0-preview1 comes apart at the version
 _COMBINED_RE: Final[re.Pattern[str]] = re.compile(r"^(?P<name>.+?)-(?P<version>v?\d+(?:\.\d+)*(?:[.\-][A-Za-z0-9]+)*)$")
 
-# Semver plus an optional ASF qualifier tail in a filename
+# Semver plus an optional ASF qualifier tail in a filename. A qualifier can't run straight on into
+# a letter, so a classifier that just starts with one (microprofile, minimal, crlf, .crate) isn't
+# read as m or cr. The check sits before the build number so beta-1a still keeps its 1
 _SEMVER_FILE_RE: Final[re.Pattern[str]] = re.compile(
-    r"(?<![0-9])(\d+(?:\.\d+)+(?:[.\-](?:alpha|beta|rc|cr|m|milestone|preview|pre|incubating|final|ga)(?:[.\-]?[0-9]+)?)*)",
+    r"(?<![0-9])(\d+(?:\.\d+)+(?:[.\-](?:alpha|beta|rc|cr|m|milestone|preview|pre|incubating|final|ga)(?![A-Za-z])(?:[.\-]?[0-9]+)?)*)",
     re.IGNORECASE,
 )
 

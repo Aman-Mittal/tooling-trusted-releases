@@ -189,6 +189,19 @@ _CASES: list[tuple[str, tuple[str, ...], str | None, str | None, str | None, cla
     ("accumulo", (), "accumulo-2.0.0-alpha-1.tar.gz", None, "2.0.0-alpha-1", _SOURCE),
     ("accumulo", (), "accumulo-2.0.0-alpha-2.tar.gz", None, "2.0.0-alpha-2", _SOURCE),
     ("continuum", (), "apache-continuum-1.1-beta-4.tar.gz", None, "1.1-beta-4", _SOURCE),
+    # A classifier that starts with a qualifier word isn't a qualifier, so the file stays on its
+    # release (#1763): tomee's microprofile build was forking off a 10.2.0-m release
+    ("tomee", ("tomee-10.2.0",), "apache-tomee-10.2.0-microprofile.tar.gz", None, "10.2.0", _SOURCE),
+    ("tomee", ("tomee-10.0.0-M1",), "apache-tomee-10.0.0-M1-microprofile.tar.gz", None, "10.0.0-m1", _SOURCE),
+    ("karaf", ("2.1.0",), "apache-karaf-2.1.0-minimal.tar.gz", None, "2.1.0", _SOURCE),
+    ("qpid", ("0.10",), "qpid-jmx-management-console-0.10-macosx.zip", None, "0.10", _SOURCE),
+    ("httpd", ("mod_fcgid",), "mod_fcgid-2.3.1-beta-crlf.zip", "mod_fcgid", "2.3.1-beta", _SOURCE),
+    ("skywalking", ("rust", "0.10.0"), "skywalking-0.10.0.crate", "rust", "0.10.0", _SOURCE),
+    ("ranger", ("2.6.0",), "ranger-2.6.0-migration-util.tar.gz", None, "2.6.0", _SOURCE),
+    # A letter after the build number doesn't drop the number, so a 1a respin stays on beta-1
+    ("tapestry", (), "Tapestry-3.0-beta-1a-bin.tar.gz", None, "3.0-beta-1", _BINARY),
+    # A real milestone still parses when a classifier word follows it
+    ("qpid", (), "qpid-1.0-incubating-M2-management-console-unix.tar.gz", None, "1.0-incubating-m2", _SOURCE),
     # The version qualifier is lowercased so a RC1/rc1 case split merges to one release
     ("turbine", ("2.2-RC1",), None, None, "2.2-rc1", None),
     ("turbine", (), "turbine-2.2-RC2.tar.gz", None, "2.2-rc2", _SOURCE),
