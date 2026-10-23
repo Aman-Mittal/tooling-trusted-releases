@@ -175,8 +175,8 @@ _PROJECT_RELEASES_FILE: Final = "project_releases.json"
 _PODLING_RELEASES_FILE: Final = "podling_releases.json"
 
 # Each committee's recent activity, written beside its page as JSON and YAML: every current
-# release, and the archivals of the last ninety days, project by project. A board report
-# covers a quarter, so that is how far back the archivals go.
+# release plus any released in the last ninety days, and the archivals of the last ninety
+# days, project by project. A board report covers a quarter, so that is how far back we go.
 _ACTIVITY_FILE: Final = "activity"
 _ACTIVITY_ARCHIVAL_WINDOW: Final = datetime.timedelta(days=90)
 # strictyaml needs telling that an empty section is a list, or it refuses to write one
@@ -367,8 +367,9 @@ async def regenerate_project(data: db.Session, project_key: str) -> None:
 def _activity_document(
     committee: sql.Committee, releases: Iterable[sql.Release], now: datetime.datetime
 ) -> dict[str, Any]:
-    """One committee's activity: its current releases, and its archivals within the window.
+    """One committee's activity: its releases, and its archivals within the window.
 
+    The releases are every current release, plus any archived one released within the window.
     Both lists run newest first, dated on the release or the archival as the case may be.
     An undated release sits at the end of its list.
     """
@@ -378,9 +379,11 @@ def _activity_document(
     for release in releases:
         if release.phase != sql.ReleasePhase.RELEASE:
             continue
-        if not release.is_archived:
+        # An archived release still counts as released if that happened inside the window
+        released_recently = (release.released is not None) and (release.released >= since)
+        if (not release.is_archived) or released_recently:
             current.append((release.released, _activity_event(release, release.released)))
-        elif (release.archived is not None) and (release.archived >= since):
+        if release.is_archived and (release.archived is not None) and (release.archived >= since):
             archived.append((release.archived, _activity_event(release, release.archived)))
     return {
         "pmc": committee.key,

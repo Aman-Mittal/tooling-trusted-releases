@@ -685,6 +685,25 @@ def test_activity_document_lists_current_releases_and_recent_archivals_newest_fi
     ]
 
 
+def test_activity_document_keeps_a_recent_release_that_has_since_been_archived() -> None:
+    now = datetime.datetime(2026, 10, 22, 12, 0, tzinfo=datetime.UTC)
+    day = datetime.timedelta(days=1)
+    releases = [
+        # Released and archived inside the window, so it is both a release and an archival
+        _release("example", "2.0.0", now - 30 * day, archived=now - 5 * day, is_archived=True),
+        # Released inside the window but archived without a date, so only a release
+        _release("example", "2.1.0", now - 20 * day, is_archived=True),
+    ]
+
+    document = catalog_site._activity_document(_committee(), releases, now)
+
+    assert document["releases"] == [
+        {"date": "2026-10-02", "project": "example", "version": "2.1.0"},
+        {"date": "2026-09-22", "project": "example", "version": "2.0.0"},
+    ]
+    assert document["archivals"] == [{"date": "2026-10-17", "project": "example", "version": "2.0.0"}]
+
+
 def test_activity_document_with_nothing_to_report_still_has_its_header() -> None:
     now = datetime.datetime(2026, 10, 22, 12, 0, tzinfo=datetime.UTC)
 
