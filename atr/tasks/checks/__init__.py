@@ -575,6 +575,10 @@ async def _resolve_rat_jar_name(release: sql.Release, rel_path: str | None = Non
     return pathlib.Path(config.get().APACHE_RAT_JAR_PATH).name
 
 
+async def _resolve_release_version(release: sql.Release, rel_path: str | None = None) -> str:
+    return str(release.version)
+
+
 async def _resolve_suffixed_file_existence(release: sql.Release, rel_path: str | None = None) -> list[str]:
     if (not rel_path) or (not release.latest_revision_number):
         return []
@@ -628,6 +632,7 @@ _EXTRA_ARG_RESOLVERS: Final[dict[str, Callable[[sql.Release, str | None], Any]]]
     "is_podling": _resolve_is_podling,
     "rat_excludes_hash": _resolve_rat_excludes_hash,
     "rat_jar_name": _resolve_rat_jar_name,
+    "release_version": _resolve_release_version,
     "suffixed_file_existence": _resolve_suffixed_file_existence,
     "unsuffixed_file_hash": _resolve_unsuffixed_file_hash,
     "unsuffixed_file_uploaders": _resolve_unsuffixed_file_uploaders,

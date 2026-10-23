@@ -88,6 +88,7 @@ class _FakePolicy:
             "start_vote_template_url": "",
             "finish_vote_template_url": "",
             "vote_comment_template_url": "",
+            "require_version_in_filenames": False,
         }
         defaults.update(fields)
         for key, value in defaults.items():
@@ -118,6 +119,28 @@ def test_export_includes_rat_excludes_url_when_set() -> None:
     policy = strictyaml.load(projects._asf_yaml_export(project)).data["project"]["policy"]
 
     assert policy["rat_excludes_url"] == "https://apache.org/.rat-excludes"
+
+
+def test_export_includes_require_version_in_filenames_only_when_set() -> None:
+    enabled = _FakeProject(
+        key="example",
+        committee_key="tooling",
+        name="Apache Example",
+        release_policy=_FakePolicy(require_version_in_filenames=True, download_path_suffix="example"),
+    )
+    disabled = _FakeProject(
+        key="example",
+        committee_key="tooling",
+        name="Apache Example",
+        release_policy=_FakePolicy(download_path_suffix="example"),
+    )
+
+    enabled_policy = strictyaml.load(projects._asf_yaml_export(enabled)).data["project"]["policy"]
+    disabled_policy = strictyaml.load(projects._asf_yaml_export(disabled)).data["project"]["policy"]
+
+    # strictyaml reads the bool back as text
+    assert enabled_policy["require_version_in_filenames"] == "true"
+    assert "require_version_in_filenames" not in disabled_policy
 
 
 def test_export_includes_only_recipient_keys_that_are_set() -> None:

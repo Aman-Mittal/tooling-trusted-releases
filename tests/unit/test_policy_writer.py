@@ -198,6 +198,17 @@ async def test_edit_version_scheme_normalises_empty_strings_to_none():
     assert project.branch_template is None
 
 
+async def test_edit_version_scheme_stores_require_version_in_filenames_on_policy():
+    project = _project()
+    data = _MockData(project=project)
+    writer = _make_committee_member(data)
+    form = _version_scheme_form(require_version_in_filenames=True)
+
+    await writer.edit_version_scheme(form)
+
+    assert project.release_policy.require_version_in_filenames is True
+
+
 async def test_edit_version_scheme_raises_when_project_missing():
     data = _MockData(project=None)
     writer = _make_committee_member(data)
@@ -498,6 +509,7 @@ def _project(
         cycle_match=cycle_match,
         branch_template=branch_template,
         mark_updated=lambda **_kwargs: None,
+        release_policy=SimpleNamespace(require_version_in_filenames=False),
     )
 
 
@@ -522,6 +534,7 @@ def _version_scheme_form(
     cycle_match="",
     calver_format="",
     branch_template="",
+    require_version_in_filenames=False,
 ):
     return shared_projects.EditVersionSchemeForm(
         variant="edit_version_scheme",
@@ -532,6 +545,7 @@ def _version_scheme_form(
         cycle_match=cycle_match,
         calver_format=calver_format,
         branch_template=branch_template,
+        require_version_in_filenames=require_version_in_filenames,
     )
 
 

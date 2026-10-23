@@ -205,6 +205,7 @@ async def test_keys_file_records_single_actionable_blocker(
         recorder_notes,
         {"KEYS"},
         False,
+        None,
     )
 
     assert recorder_problems.messages == [
@@ -238,6 +239,7 @@ async def test_maven_cyclonedx_sbom_not_flagged_as_unknown(
         recorder_notes,
         {sbom, artifact},
         False,
+        None,
     )
 
     assert recorder_problems.messages == []
@@ -350,6 +352,7 @@ async def test_sbom_signature_not_flagged_as_unknown(monkeypatch: pytest.MonkeyP
         recorder_notes,
         {signature, sbom},
         False,
+        None,
     )
 
     assert recorder_problems.messages == []

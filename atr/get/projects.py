@@ -462,6 +462,8 @@ def _asf_yaml_policy_extras(release_policy: sql.ReleasePolicy) -> dict[str, obje
         extras["vote_mode"] = release_policy.vote_mode.value
     if release_policy.min_hours is not None:
         extras["min_hours"] = str(release_policy.min_hours)
+    if release_policy.require_version_in_filenames:
+        extras["require_version_in_filenames"] = "true"
     return extras
 
 
@@ -1449,6 +1451,7 @@ async def _render_version_scheme_form(project: sql.Project, *, readonly: bool) -
                 "cycle_match": project.cycle_match or "",
                 "calver_format": project.calver_format or "",
                 "branch_template": project.branch_template or "",
+                "require_version_in_filenames": project.policy_require_version_in_filenames,
             },
             readonly=readonly,
         )

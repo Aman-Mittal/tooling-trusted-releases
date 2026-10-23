@@ -1538,6 +1538,12 @@ Sincerely,
             return False
         return policy.auto_archive_prior_release
 
+    @property
+    def policy_require_version_in_filenames(self) -> bool:
+        if (policy := self.release_policy) is None:
+            return False
+        return policy.require_version_in_filenames
+
 
 # ProjectCycle: Project Release
 class ProjectCycle(sqlmodel.SQLModel, table=True):
@@ -2395,6 +2401,8 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     )
     auto_archive_prior_release: bool = sqlmodel.Field(default=False)
     download_path_suffix: str = sqlmodel.Field(default="")
+    # Every artifact filename must contain the release version
+    require_version_in_filenames: bool = sqlmodel.Field(default=False)
 
     # 1-1: ReleasePolicy -> Project
     # 1-1: Project -C-> ReleasePolicy
@@ -2431,6 +2439,7 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
             github_finish_workflow_path=list(self.github_finish_workflow_path),
             auto_archive_prior_release=self.auto_archive_prior_release,
             download_path_suffix=self.download_path_suffix,
+            require_version_in_filenames=self.require_version_in_filenames,
         )
 
 

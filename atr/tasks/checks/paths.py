@@ -41,9 +41,14 @@ _ALLOWED_TOP_LEVEL: Final = frozenset(
 )
 _DOC_TREE_MAX_FILES: Final = 512
 # Release policy fields which this check relies on - used for result caching
-INPUT_POLICY_KEYS: Final[list[str]] = ["binary_artifact_paths", "source_artifact_paths", "download_path_suffix"]
-INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling", "all_files"]
-CHECK_VERSION: Final[str] = "11"
+INPUT_POLICY_KEYS: Final[list[str]] = [
+    "binary_artifact_paths",
+    "source_artifact_paths",
+    "download_path_suffix",
+    "require_version_in_filenames",
+]
+INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling", "all_files", "release_version"]
+CHECK_VERSION: Final[str] = "12"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -110,6 +115,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         raise RuntimeError(f"Base release directory does not exist or is not a directory: {base_path}")
 
     is_podling = args.extra_args.get("is_podling", False)
+    required_version = await _required_filename_version(args)
     relative_paths = [p async for p in util.paths_recursive(base_path)]
     relative_paths_set = set(str(p) for p in relative_paths)
 
@@ -124,6 +130,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
             recorder_notes,
             relative_paths_set,
             is_podling,
+            required_version,
         )
 
     await _check_source_artifact_present(args, recorder_source, relative_paths, base_path)
@@ -141,6 +148,7 @@ async def _check_artifact_rules(
     errors: list[str],
     blockers: list[str],
     is_podling: bool,
+    required_version: str | None,
 ) -> None:
     """Check rules specific to artifact files."""
     full_path = base_path / relative_path
@@ -164,6 +172,10 @@ async def _check_artifact_rules(
         # TODO: Allow "incubator" too as #114 requests?
         if "incubating" not in full_path.path.name:
             blockers.append("Podling artifact filenames must include 'incubating'")
+
+    # The project policy can require the release version in every artifact filename
+    if (required_version is not None) and (not _filename_has_version(full_path.path.name, required_version)):
+        blockers.append(f"Artifact filename must include the release version '{required_version}'")
 
 
 async def _check_checksum_types(recorder_suggestions: checks.Recorder, relative_paths: set[str]) -> None:
@@ -306,6 +318,7 @@ async def _check_path_process_single(  # noqa: C901
     recorder_notes: checks.Recorder,
     relative_paths: set[str],
     is_podling: bool,
+    required_version: str | None,
 ) -> None:
     """Process and check a single path within the release directory."""
     full_path = base_path / relative_path
@@ -376,7 +389,9 @@ async def _check_path_process_single(  # noqa: C901
 
     if ext_artifact:
         log.info(f"Checking artifact rules for {full_path}")
-        await _check_artifact_rules(base_path, relative_path, relative_paths, errors, blockers, is_podling)
+        await _check_artifact_rules(
+            base_path, relative_path, relative_paths, errors, blockers, is_podling, required_version
+        )
     elif ext_metadata:
         log.info(f"Checking metadata rules for {full_path}")
         await _check_metadata_rules(
@@ -468,6 +483,15 @@ async def _check_source_artifact_present(
         )
 
 
+def _filename_has_version(filename: str, version: str) -> bool:
+    # A digit, or a digit and a dot, on either side makes it a different version, so 1.2
+    # doesn't match in 11.2, 0.1.2, or 1.2.3. Letters and other separators are fine, as in
+    # v1.2 or Apache.NMS.1.2.nupkg. Projects disagree on case between versions and filenames
+    # (M10 against m10), so we ignore it
+    pattern = r"(?<![0-9])(?<![0-9]\.)" + re.escape(version) + r"(?![0-9])(?!\.[0-9])"
+    return re.search(pattern, filename, re.IGNORECASE) is not None
+
+
 def _is_bundled_doc(relative_path: safe.RelPath) -> bool:
     if len(relative_path.as_path().parts) <= 1:
         return False
@@ -499,3 +523,22 @@ async def _record(
             {},
             primary_rel_path=relative_path,
         )
+
+
+async def _required_filename_version(args: checks.FunctionArguments) -> str | None:
+    # Read the flag from the same policy that the cache key used, which is the revision's
+    # attestable copy where there is one
+    attestable_data = await attestable.load(args.project_key, args.version_key, args.revision_number)
+    if attestable_data is not None:
+        required = bool(attestable_data.policy.get("require_version_in_filenames", False))
+    else:
+        async with db.session() as data:
+            release = await data.release(
+                project_key=str(args.project_key),
+                version=str(args.version_key),
+                _release_policy=True,
+                _project_release_policy=True,
+            ).demand(RuntimeError(f"Release {args.project_key} {args.version_key} not found"))
+        policy = release.release_policy or release.project.release_policy
+        required = (policy is not None) and policy.require_version_in_filenames
+    return str(args.version_key) if required else None

@@ -277,7 +277,7 @@ class ReleaseManager(CommitteeParticipant):
 
     async def edit_version_scheme(self, form: shared.projects.EditVersionSchemeForm) -> None:
         project_key = form.project_key
-        project = await self.__validate_project_in_committee(project_key)
+        project, release_policy = await self.__get_or_create_policy(project_key)
 
         try:
             version_method = models.sql.VersionMethod(form.version_method)
@@ -313,6 +313,7 @@ class ReleaseManager(CommitteeParticipant):
         project.cycle_match = cycle_match
         project.calver_format = calver_format
         project.branch_template = form.branch_template.strip() or None
+        release_policy.require_version_in_filenames = form.require_version_in_filenames
 
         await cycles.reassign_release_cycles(self.__data, project)
         await catalog_site.queue_regeneration(self.__data, self.__asf_uid, str(project_key))

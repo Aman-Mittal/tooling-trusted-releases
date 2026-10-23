@@ -465,6 +465,7 @@ class PolicyArgsBase(schema.Strict):
     manual_vote: bool | None = None
     min_hours: int | None = None
     release_checklist: str | None = None
+    require_version_in_filenames: bool | None = None
     source_artifact_paths: list[str] | None = None
     source_excludes_lightweight: list[str] | None = None
     source_excludes_rat: list[str] | None = None

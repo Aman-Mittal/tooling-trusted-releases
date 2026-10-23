@@ -457,6 +457,12 @@ class EditVersionSchemeForm(form.Form):
         "Branch template",
         "Optional naming hint for source branches per cycle. Not currently enforced.",
     )
+    require_version_in_filenames: form.Bool = form.label(
+        "Require version in filenames",
+        "If enabled, every artifact filename must contain the release version.",
+        widget=form.Widget.CHECKBOX,
+        default=False,
+    )
 
     @pydantic.field_validator("version_pattern", mode="before")
     @classmethod

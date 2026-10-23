@@ -210,7 +210,11 @@ async def test_distribution_confirming_pending_row_carries_over_resolved_metadat
 @pytest.mark.asyncio
 async def test_policy_edit_rejects_foreign_committee() -> None:
     data = mock.MagicMock()
-    data.project = mock.MagicMock(return_value=Query(active_project("other")))
+    data.begin_immediate = mock.AsyncMock()
+    # The version scheme writer loads the release policy before checking the committee
+    foreign = active_project("other")
+    foreign.release_policy = SimpleNamespace(require_version_in_filenames=False)
+    data.project = mock.MagicMock(return_value=Query(foreign))
     writer = object.__new__(policy.ReleaseManager)
     writer._ReleaseManager__data = data
     writer._ReleaseManager__asf_uid = "alice"

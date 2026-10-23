@@ -91,6 +91,10 @@ once have several active cycles.
   `(YY.MM).N`. Leave it empty to keep a single default cycle.
 * **Branch template.** An optional naming hint for the source branch of each cycle. ATR does not
   currently enforce it.
+* **Require version in filenames.** When enabled, every artifact filename must contain the release
+  version, or the release is blocked. Case is ignored. For example, for
+  version `1.2` the file `apache-example-1.2-src.tar.gz` passes while
+  `apache-example-1.2.3-src.tar.gz` does not.
 
 ### Cycle dates
 

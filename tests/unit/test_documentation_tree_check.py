@@ -68,7 +68,7 @@ async def test_sbom_paths_accept_source_companions(monkeypatch, tmp_path, name: 
     monkeypatch.setattr(paths.user, "is_admin_async", mock.AsyncMock(return_value=False))
     relative_paths = {"camel-k-sources-2.11.0.tar.gz", "sbom.json", name}
     await paths._check_path_process_single(
-        "test", safe.StatePath(tmp_path), safe.RelPath(name), recorder, recorder, recorder, relative_paths, False
+        "test", safe.StatePath(tmp_path), safe.RelPath(name), recorder, recorder, recorder, relative_paths, False, None
     )
     assert [status for status, _, _ in recorder.messages] == ["note"]
 
