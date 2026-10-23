@@ -1,1 +1,1 @@
-mermaid.initialize({startOnLoad: true});
+mermaid.initialize({startOnLoad: true, layout: "dagre", look: "classic", theme: "default"});
