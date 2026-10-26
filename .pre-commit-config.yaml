@@ -5,6 +5,7 @@ default_language_version:
 default_env:
   npm_config_ignore_scripts: "true"
   npm_config_min_release_age: "7"
+  UV_EXCLUDE_NEWER: "5 days"
 update:
   cooldown_days: 7
   freeze: true
