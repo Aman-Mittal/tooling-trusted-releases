@@ -9,6 +9,10 @@ default_env:
 update:
   cooldown_days: 7
   freeze: true
+  exclude_tags: "*-{alpha,beta,next,rc}*"
+  repos:
+    "https://github.com/woodruffw/zizmor-pre-commit":
+      exclude_tags: ["*-{alpha,beta,next,rc}*", "*rc*"]
 exclude: ^node_modules/
 repos:
 - repo: meta
