@@ -56,8 +56,6 @@ cffi==2.1.1
     #   asfpy
     #   cmarkgfm
     #   cryptography
-cfgv==3.5.0
-    # via pre-commit
 charset-normalizer==3.5.2
     # via requests
 click==8.5.0
@@ -81,8 +79,6 @@ cyclonedx-python-lib==11.12.0
 decouple-types==1.0.2
 defusedxml==0.7.1
     # via py-serializable
-distlib==0.4.4
-    # via virtualenv
 djlint==1.46.6
 dnspython==2.9.0
     # via
@@ -108,10 +104,6 @@ ezt==1.1
     # via
     #   asfpy
     #   asfquart
-filelock==4.2.4
-    # via
-    #   python-discovery
-    #   virtualenv
 flask==3.1.3
     # via quart
 forbiddenfruit==0.1.4 ; implementation_name == 'cpython'
@@ -144,8 +136,6 @@ hypercorn==0.18.0
     #   tooling-trusted-releases
 hyperframe==6.1.0
     # via h2
-identify==2.6.20
-    # via pre-commit
 idna==3.20
     # via
     #   anyio
@@ -207,9 +197,7 @@ multidict==7.1.0
     #   aiohttp
     #   yarl
 nodeenv==1.11.0
-    # via
-    #   pre-commit
-    #   pyright
+    # via pyright
 orjson==3.13.0
     # via tooling-trusted-releases
 packageurl-python==0.17.6
@@ -218,12 +206,9 @@ packaging==26.3
     # via
     #   dunamai
     #   tooling-trusted-releases
-    #   virtualenv
 pathspec==1.1.1
     # via djlint
-platformdirs==4.13.5
-    # via virtualenv
-pre-commit==4.7.0
+prek==0.5.7
 priority==2.0.0
     # via hypercorn
 propcache==0.5.4
@@ -264,14 +249,11 @@ python-dateutil==2.9.0.post0
     #   strictyaml
 python-decouple==3.8
     # via tooling-trusted-releases
-python-discovery==1.6.4
-    # via virtualenv
 pyyaml==6.0.3
     # via
     #   asfpy
     #   asfquart
     #   djlint
-    #   pre-commit
 quart==0.23.1
     # via
     #   asfquart
@@ -362,8 +344,6 @@ urllib3==2.8.0
     #   requests
 uvloop==0.23.0
     # via hypercorn
-virtualenv==21.14.13
-    # via pre-commit
 watchfiles==1.3.0
     # via
     #   asfpy

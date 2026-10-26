@@ -1,3 +1,13 @@
+minimum_prek_version: "0.5.7"
+default_language_version:
+  node: "24.22.1"
+  python: "3.14"
+default_env:
+  npm_config_ignore_scripts: "true"
+  npm_config_min_release_age: "7"
+update:
+  cooldown_days: 7
+  freeze: true
 exclude: ^node_modules/
 repos:
 - repo: meta
@@ -109,7 +119,7 @@ repos:
         - '--ignore-vuln'
         - 'PYSEC-2025-183'
 - repo: https://github.com/oxc-project/mirrors-oxlint
-  rev: 644689fa1b7bb5f57cade8e8869fae6d8fcfc1f0  # frozen: v1.60.0
+  rev: 5b56cf853a2b0e1e276773824e00111e6312cb09  # frozen: v1.88.0
   hooks:
     - id: oxlint
       name: lint JS files with Oxlint

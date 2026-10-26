@@ -55,10 +55,10 @@ certs-local:
 
 check:
 	git add -A
-	uv run --frozen pre-commit run --all-files
+	uv run --frozen prek run --all-files
 
 check-clean:
-	uv run --frozen pre-commit clean
+	uv run --frozen prek cache clean
 
 check-extra:
 	@git add -A
@@ -67,11 +67,11 @@ check-extra:
 
 check-heavy:
 	git add -A
-	uv run --frozen pre-commit run --all-files --config .pre-commit-heavy.yaml
+	uv run --frozen prek run --all-files --config .pre-commit-heavy.yaml
 
 check-light:
 	git add -A
-	uv run --frozen pre-commit run --all-files --config .pre-commit-light.yaml
+	uv run --frozen prek run --all-files --config .pre-commit-light.yaml
 
 docs:
 	mkdir -p docs
@@ -161,8 +161,9 @@ unit:
 	sh tests/run-unit.sh
 
 update-deps:
-	pre-commit autoupdate --freeze || :
 	uv lock --upgrade
 	uv sync --frozen --all-groups
 	python3 -S scripts/check_pth_files.py
 	uv export --frozen --format requirements-txt --no-emit-project --no-header --no-hashes > pip-audit.requirements
+	uv run --frozen prek update
+	uv run --frozen prek update --config .pre-commit-heavy.yaml

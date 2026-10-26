@@ -40,7 +40,7 @@ For detailed ASF policies, commit message guidelines, and security consideration
 
    The `git push origin main` updates your fork on GitHub. Do this regularly to keep your fork current.
 
-2. **Install dependencies** (includes pre-commit, dev tools, and test dependencies):
+2. **Install dependencies** (includes prek, dev tools, and test dependencies):
 
    ```shell
    # Install uv if you don't have it
@@ -53,7 +53,7 @@ For detailed ASF policies, commit message guidelines, and security consideration
 3. **Set up pre-commit hooks:**
 
    ```shell
-   uv run pre-commit --frozen install
+   uv run --frozen prek install --force
    ```
 
 4. **Run the server:** See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed instructions.
@@ -76,7 +76,7 @@ For detailed ASF policies, commit message guidelines, and security consideration
    sh tests/run-unit.sh    # Required: unit tests
    ```
 
-   All checks and tests must pass locally before submitting. If `pip-audit` is reporting false positive CVEs, try running `uv run --frozen pre-commit clean` first.
+   All checks and tests must pass locally before submitting. If `pip-audit` is reporting false positive CVEs, try running `uv run --frozen prek cache clean` first.
 
 4. **Commit** with a clear message (see [commit style](#commit-message-style) below)
 
@@ -168,7 +168,7 @@ sh tests/run-playwright.sh
 make check-light
 ```
 
-Run `uv run --frozen pre-commit clean` if `pip-audit` reports false positive CVEs during checks.
+Run `uv run --frozen prek cache clean` if `pip-audit` reports false positive CVEs during checks.
 
 ## Vulnerability exceptions
 

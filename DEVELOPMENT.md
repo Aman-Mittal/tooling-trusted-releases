@@ -17,7 +17,7 @@ ATR can be developed on **Linux** or **macOS**. Windows and other platforms are 
 - **biome** - For JavaScript/TypeScript linting ([installation guide](https://biomejs.dev/guides/manual-installation/))
 - **cmark** - CommonMark processor (optional, for rebuilding documentation)
 
-**Installed via `uv sync`:** pre-commit, ruff, pyright, playwright, and other dev/test tools (see `pyproject.toml`).
+**Installed via `uv sync`:** prek, ruff, pyright, playwright, and other dev/test tools (see `pyproject.toml`).
 
 ### Platform-specific installation
 
@@ -160,7 +160,7 @@ Alternatively, use [`https://127.0.0.1:8080/`](https://127.0.0.1:8080/) without 
 1. **Set up pre-commit hooks:**
 
    ```shell
-   uv run pre-commit --frozen install
+   uv run --frozen prek install --force
    ```
 
 2. **Run code checks:**

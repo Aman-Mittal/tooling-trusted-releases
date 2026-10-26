@@ -108,7 +108,7 @@ uv sync --frozen --no-dev
 make update-deps
 ```
 
-This updates `uv.lock` and runs `pre-commit autoupdate`.
+This updates `uv.lock`, then runs `prek update`, which only selects hook releases that are at least seven days old.
 
 ## TLS certificates
 
