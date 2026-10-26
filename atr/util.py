@@ -501,7 +501,6 @@ async def cap_create_question(
         "description": description,
         "target_audience": target_audience,
         "approval_type": approval_type,
-        "is_binding": True,
         "is_private": True,
         "response_option": {"kind": "vote"},
         "closes_at": closes_at.astimezone(datetime.UTC).isoformat(),
