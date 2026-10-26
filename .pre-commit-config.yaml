@@ -133,6 +133,19 @@ repos:
         - --deny=suspicious
         - --deny=pedantic
         - --allow=unicorn/prefer-query-selector
+- repo: https://github.com/biomejs/pre-commit
+  rev: 715e957869f0333b829045b7db9d2ca0bdd9cc21  # frozen: v2.3.8
+  hooks:
+    - id: biome-format
+      name: format JS files with Biome
+      args: [--colors=off]
+      types: [javascript]
+      files: ^atr/static/js/src/.*\.js$
+    - id: biome-check
+      name: lint JS files with Biome
+      args: [--error-on-warnings, --colors=off]
+      types: [javascript]
+      files: ^atr/static/js/src/.*\.js$
 # - repo: https://github.com/PyCQA/flake8
 #   rev: 7.3.0
 #   hooks:
@@ -162,24 +175,6 @@ repos:
       entry: uv run --frozen ruff format --force-exclude
       language: system
       types: [python]
-
-    - id: biome-format
-      # Install biome from https://biomejs.dev/guides/manual-installation/
-      # Avoid using NPM to install it until #359 is resolved
-      name: format JS files with Biome
-      entry: biome format --write --files-ignore-unknown=true --no-errors-on-unmatched --colors=off
-      language: system
-      types: [javascript]
-      files: ^atr/static/js/src/.*\.js$
-
-    - id: biome-check
-      # Install biome from https://biomejs.dev/guides/manual-installation/
-      # Avoid using NPM to install it until #359 is resolved
-      name: lint JS files with Biome
-      entry: biome check --write --error-on-warnings --files-ignore-unknown=true --no-errors-on-unmatched --colors=off
-      language: system
-      types: [javascript]
-      files: ^atr/static/js/src/.*\.js$
 
     - id: pyright
       name: type check Python files with Pyright

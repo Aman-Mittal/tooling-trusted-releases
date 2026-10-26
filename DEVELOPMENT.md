@@ -14,7 +14,6 @@ ATR can be developed on **Linux** or **macOS**. Windows and other platforms are 
 - **Docker or Podman** - For containerized development (recommended)
 - **mkcert** - For local TLS certificates (if running directly)
 - **make** - POSIX-compliant make utility
-- **biome** - For JavaScript/TypeScript linting ([installation guide](https://biomejs.dev/guides/manual-installation/))
 - **cmark** - CommonMark processor (optional, for rebuilding documentation)
 
 **Installed via `uv sync`:** prek, ruff, pyright, playwright, and other dev/test tools (see `pyproject.toml`).
