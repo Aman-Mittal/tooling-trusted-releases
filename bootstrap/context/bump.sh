@@ -28,10 +28,10 @@ fi
 # fi
 # npm install "bootstrap@$VERSION" --before="$PUBLISH_DATE"
 
-SECONDS_AGO=$((14 * 24 * 60 * 60))
+SECONDS_AGO=$((7 * 24 * 60 * 60))
 CUTOFF=$(date -u -d "@$(($(date +%s) - SECONDS_AGO))" +%Y-%m-%dT%H:%M:%SZ)
 
-echo "Using 14-day cooldown: --before=$CUTOFF"
+echo "Using 7-day cooldown: --before=$CUTOFF"
 
 rm -rf node_modules package-lock.json
 

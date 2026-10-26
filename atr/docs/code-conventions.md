@@ -389,9 +389,14 @@ improve UX.
 
 Disable lifecycle scripts, separate the process into pinning and building from pinned versions,
 ensure that versions are properly pinned (e.g. using `save-exact` and `save-prefix` in npm), run
-audits automatically after installation, and set a package cooldown of 14 days. Manually update in
-case of a CVE within the 14 day cooldown period. If possible, run the whole process in an OCI
+audits automatically after installation, and set a package cooldown of 7 days. Manually update in
+case of a CVE within the 7 day cooldown period. If possible, run the whole process in an OCI
 container with a non-root build user in the container.
+
+Commit hook tools that prek installs from npm cannot follow all of these practices, because prek
+installs each hook without a lockfile. For those, `.pre-commit-config.yaml` pins each hook, and its
+`default_env` disables lifecycle scripts and applies the same 7 day cooldown to every package that
+npm resolves, but no audit runs after installation.
 
 ## Shell
 

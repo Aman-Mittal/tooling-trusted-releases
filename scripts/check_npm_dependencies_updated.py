@@ -23,7 +23,7 @@ import sys
 from typing import Final
 
 # Looser than the 30-day Python window: the frontend deps are Bootstrap's CSS/JS, which move more
-# slowly, and bump.sh's 14-day cooldown already narrows the window from publish to allowed
+# slowly, and bump.sh's 7-day cooldown already narrows the window from publish to allowed
 _MAX_AGE_DAYS: Final[int] = 60
 
 # bump.sh writes its --before cutoff here, the npm counterpart of uv.lock's exclude-newer. It's a

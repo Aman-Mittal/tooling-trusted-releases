@@ -11,16 +11,18 @@
 * [Overview](#overview)
 * [Python dependencies](#python-dependencies)
 * [Frontend dependencies](#frontend-dependencies)
+* [Commit hook tools](#commit-hook-tools)
 * [External tools in the container image](#external-tools-in-the-container-image)
 * [Implementation references](#implementation-references)
 
 ## Overview
 
-ATR depends on three families of third-party code: Python packages, resolved and locked by uv; the
-Bootstrap frontend toolkit, installed through npm; and a small set of command-line tools baked into
-the container image. We make use of specific version pinning. Python and frontend dependency
-freshness are both enforced automatically at commit time through pre-commit hooks, the Bootstrap
-toolkit is updated by a script, and the container tools are verified at image build time.
+ATR depends on four families of third-party code: Python packages, resolved and locked by uv; the
+Bootstrap frontend toolkit, installed through npm; the tools that the commit hooks run, installed by
+prek; and a small set of command-line tools baked into the container image. We make use of specific
+version pinning. Python and frontend dependency freshness are both enforced automatically at commit
+time through pre-commit hooks, the Bootstrap toolkit is updated by a script, hook tools are updated
+by `make update-deps`, and the container tools are verified at image build time.
 
 This page describes how those dependencies are updated and what guardrails apply. It covers only
 ATR's own dependencies. Scanning of the release artifacts that users upload is a separate concern
@@ -56,9 +58,9 @@ The Bootstrap frontend toolkit is installed through npm and updated with
 [`bump.sh`](/ref/bootstrap/context/bump.sh), which takes the target Bootstrap version as its
 argument.
 
-The script enforces a 14-day cooldown: it installs the requested version with `npm install --before`
-set to a fortnight ago, so a freshly published release cannot be pulled in until it has been
-available for two weeks. It then runs `npm audit` to check for known vulnerabilities and
+The script enforces a 7-day cooldown: it installs the requested version with `npm install --before`
+set to a week ago, so a freshly published release cannot be pulled in until it has been available
+for a week. It then runs `npm audit` to check for known vulnerabilities and
 `npm audit signatures` to verify the registry signatures, and finally reminds the operator to commit
 the updated `package.json`, `package-lock.json` and `.npm-exclude-newer`.
 
@@ -67,11 +69,25 @@ the updated `package.json`, `package-lock.json` and `.npm-exclude-newer`.
 The `check-npm-dependencies-updated` pre-commit hook runs
 [`check_npm_dependencies_updated.py`](/ref/scripts/check_npm_dependencies_updated.py), which fails
 if the frontend dependencies are more than 60 days old - a looser window than Python's 30 days,
-since Bootstrap moves more slowly and the 14-day cooldown already narrows how new an update can be.
+since Bootstrap moves more slowly and the 7-day cooldown already narrows how new an update can be.
 `package-lock.json` carries no timestamp of its own, so `bump.sh` records its `--before` cutoff in
 `bootstrap/source/.npm-exclude-newer`, and the check reads the age from there. A `package-lock.json`
 edit that skips `bump.sh` does not refresh that file, which keeps updates on the `bump.sh` path. On
 failure it prints `Run: bootstrap/context/bump.sh VERSION`.
+
+## Commit hook tools
+
+The commit hooks in [`.pre-commit-config.yaml`](/ref/.pre-commit-config.yaml) and
+[`.pre-commit-heavy.yaml`](/ref/.pre-commit-heavy.yaml) are run by prek, which installs each hook's
+tool into an environment of its own. Each remote hook is pinned to a commit hash, and
+`make update-deps` runs `prek update`, which only moves a hook to a release tag that is at least 7
+days old.
+
+prek installs Node hooks with npm under a pinned Node release, and Python hooks with uv. The
+`default_env` in each config applies a cooldown to everything those installers resolve: npm skips
+lifecycle scripts and any version published in the last 7 days, and uv skips any file uploaded in
+the last 5 days, matching the `exclude-newer` setting in [`pyproject.toml`](/ref/pyproject.toml).
+These hook installs have no lockfile, so they are not audited after installation.
 
 ## External tools in the container image
 
