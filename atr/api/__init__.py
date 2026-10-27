@@ -455,6 +455,7 @@ async def distribute_ssh_register(
     # Validate that the task ID passed exists and was started by the UID asserted
     async with db.session() as _data:
         await _data.task(id=int(data.task_id), asf_uid=data.asf_uid).demand(exceptions.NotFound("Task not found"))
+    await interaction.trusted_workflow_run(payload, int(data.task_id), data.project_key)
     async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
         fingerprint, expires = await wacm.ssh.add_workflow_key(
             payload.actor,
@@ -577,6 +578,7 @@ async def distribution_record_from_workflow(
     # Validate that the task ID passed exists and was started by the UID asserted
     async with db.session() as _data:
         await _data.task(id=int(data.task_id), asf_uid=data.asf_uid).demand(exceptions.NotFound("Task not found"))
+    await interaction.trusted_workflow_run(ctx.payload, int(data.task_id), data.project)
     util.validate_distribution_owner_namespace(data.platform, data.distribution_owner_namespace)
     # TODO: Split the below code into a new function and reuse in /publisher and /distribution / record.
     dd = models.distribution.Data(
@@ -2004,6 +2006,8 @@ async def update_distribution_task_status(
     # If UID is not none, this is a non-ATR workflow, which is unsupported.
     if ctx.asf_uid is not None:
         raise exceptions.Forbidden("This endpoint may only be called by ATR")
+    if data.run_id != ctx.payload.run_id:
+        raise exceptions.Forbidden("Workflow run ID does not match the JWT")
     async with db.session() as db_data:
         status = await db_data.workflow_status(
             workflow_id=data.workflow,

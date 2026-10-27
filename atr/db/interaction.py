@@ -48,6 +48,7 @@ import atr.web as web
 # Infra-provided service account with permission to run ATR workflows
 # audit_guidance required actor for ATR distribution workflows; must not be used for project TP workflows.
 GITHUB_TRUSTED_ROLE_NID: Final[int] = 254436773
+GITHUB_TRUSTED_ROLE_REPOSITORY: Final[str] = "apache/tooling-actions"
 PENDING_QUARANTINE_VOTE_BLOCK_MESSAGE: Final[str] = (
     "Archive validation is still in progress. Please wait for it to complete before starting a vote."
 )
@@ -1138,6 +1139,17 @@ def trusted_vote_round(release: sql.Release) -> int | None:
     return None
 
 
+async def trusted_workflow_run(
+    payload: github.TrustedPublisherPayload, task_id: int, project_key: safe.ProjectKey
+) -> None:
+    if payload.run_id is None:
+        raise InteractionError("JWT has no workflow run ID")
+    async with db.session() as data:
+        await data.workflow_status(run_id=int(payload.run_id), task_id=task_id, project_key=str(project_key)).demand(
+            InteractionError(f"Workflow run {payload.run_id} was not dispatched by ATR for task {task_id}")
+        )
+
+
 async def user_committees(asf_uid: str) -> list[tuple[str, str]]:
     results = []
     for committee in await user_committees_participant(asf_uid):
@@ -1214,6 +1226,9 @@ async def validate_trusted_jwt(publisher: str, jwt: str) -> tuple[github.Trusted
                 "in gitbox.apache.org/boxer"
             )
             raise base.ASFQuartException(message, errorcode=403) from e
+    elif payload.repository != GITHUB_TRUSTED_ROLE_REPOSITORY:
+        message = f"Trusted role tokens are only accepted from {GITHUB_TRUSTED_ROLE_REPOSITORY}"
+        raise base.ASFQuartException(message, errorcode=403)
     else:
         asf_uid = None
     return payload, asf_uid
