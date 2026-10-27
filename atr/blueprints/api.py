@@ -62,6 +62,7 @@ def typed(
     method: str = "",
     response: list[tuple[type[pydantic.BaseModel], int]] | tuple[type[pydantic.BaseModel], int] | None = None,
     rate_limit: tuple[int, datetime.timedelta] | None = None,
+    system_rate_limit: tuple[int, datetime.timedelta] | None = None,
 ) -> Callable[[Callable[..., Awaitable[Any]]], web.RouteFunction[Any]]:
     """Single decorator for an API route.
 
@@ -69,6 +70,9 @@ def typed(
     in a fixed order: rate limit, header-credential auth, body parsing,
     body-credential auth, handler. Header auth wraps outside body validation so an
     unauthenticated request is rejected before its body is parsed.
+
+    If system_rate_limit is given, requests whose body carries a system PAT use it
+    in place of rate_limit.
     """
 
     def decorator(handler: Callable[..., Awaitable[Any]]) -> web.RouteFunction[Any]:
@@ -112,6 +116,7 @@ def typed(
             query_param=query_param,
             body_param=body_param,
             rate_limit=rate_limit,
+            system_rate_limit=system_rate_limit,
         )
 
         _add_url_rules(view, path, endpoint, http_method, optional_params)
@@ -157,6 +162,7 @@ def _decorate_view(
     query_param: tuple[str, type] | None,
     body_param: tuple[str, type[pydantic.BaseModel]] | None,
     rate_limit: tuple[int, datetime.timedelta] | None,
+    system_rate_limit: tuple[int, datetime.timedelta] | None,
 ) -> Callable[..., Any]:
     # Layer the OpenAPI/validation/auth/rate-limit decorators onto the view in the
     # order they must run: security annotation, response and request validation,
@@ -171,7 +177,16 @@ def _decorate_view(
         view = quart_schema.validate_request(body_param[1])(view)
     if auth_scheme in auth.HEADER_SCHEMES:
         view = _require_header_auth(auth_scheme, view)
-    if rate_limit is not None:
+    if (rate_limit is not None) and (system_rate_limit is not None):
+        view = rate_limiter.rate_limit(
+            limits=[
+                rate_limiter.RateLimit(rate_limit[0], rate_limit[1], skip_function=_request_is_system_pat),
+                rate_limiter.RateLimit(
+                    system_rate_limit[0], system_rate_limit[1], skip_function=_skip_unless_system_pat
+                ),
+            ]
+        )(view)
+    elif rate_limit is not None:
         view = rate_limiter.rate_limit(rate_limit[0], rate_limit[1])(view)
     return view
 
@@ -242,6 +257,18 @@ def _json_error(
     return quart.jsonify(payload), status_code
 
 
+async def _request_is_system_pat() -> bool:
+    # The limiter runs before body parsing and auth, so this reads the cached body
+    # and looks up the PAT hash only to choose a bucket. Nothing is trusted from it
+    if (cached := quart.g.get("rate_limit_system_pat")) is not None:
+        return bool(cached)
+    body = await quart.request.get_json(silent=True)
+    pat = body.get("pat") if isinstance(body, dict) else None
+    is_system = isinstance(pat, str) and await storage.pat_is_system(pat)
+    quart.g.rate_limit_system_pat = is_system
+    return is_system
+
+
 def _require_header_auth(scheme: auth.Auth, inner: Callable[..., Any]) -> Callable[..., Any]:
     # Wrap a view so header-credential auth runs before anything it wraps (body
     # validation included). functools.wraps carries the inner OpenAPI attributes
@@ -258,3 +285,7 @@ def _require_header_auth(scheme: auth.Auth, inner: Callable[..., Any]) -> Callab
 def _setup(state: blueprints.BlueprintSetupState) -> None:
     if isinstance(state.app, base.QuartApp):
         _exempt_blueprint(state.app)
+
+
+async def _skip_unless_system_pat() -> bool:
+    return not await _request_is_system_pat()

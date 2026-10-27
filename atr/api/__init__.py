@@ -686,6 +686,7 @@ async def ignore_list(
 @api.typed(
     auth_scheme=api_auth.Auth.PAT,
     rate_limit=(10, datetime.timedelta(hours=1)),
+    system_rate_limit=(600, datetime.timedelta(hours=1)),
 )
 async def jwt_create(
     _jwt_create: Literal["jwt/create"],
