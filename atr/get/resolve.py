@@ -381,6 +381,18 @@ async def selected(  # noqa: C901
             message += " The vote resolution bypass allows this vote to be marked as passed anyway."
         pre_submit = htm.div(".border.rounded.bg-warning-subtle.p-3.mb-3")[icon, message]
 
+    # Mirrors the gate in the vote writer: no publish after podling round one
+    publishes_on_pass = (vote_round != 1) and (
+        is_security_team
+        or ((latest_vote_task is not None) and bool(latest_vote_task.task_args.get("automatic_publish_when_resolved")))
+    )
+    if (form_cls is shared.resolve.SubmitForm) and publishes_on_pass:
+        publish_notice = htm.div(".border.rounded.bg-info-subtle.p-3.mb-3")[
+            htpy.i(class_="bi bi-info-circle me-1"),
+            "If this vote is marked as passed, the release files will be published to SVN automatically.",
+        ]
+        pre_submit = htm.div[pre_submit, publish_notice] if (pre_submit is not None) else publish_notice
+
     resolve_form = await atr.form.render(
         model_cls=form_cls,
         action=util.as_url(post.resolve.selected, project_key=release.project.key, version_key=release.version),
