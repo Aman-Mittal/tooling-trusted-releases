@@ -106,6 +106,11 @@ def test_project_config_accepts_calver_format_for_a_calver_project() -> None:
     assert args.project.calver_format == "(YY.MM).N"
 
 
+def test_project_config_rejects_calver_format_without_version_method() -> None:
+    with pytest.raises(pydantic.ValidationError, match=re.escape("applies only when version_method is 'calver'")):
+        _project_config_project(calver_format="(YY.MM).N")
+
+
 def test_project_config_rejects_calver_format_for_another_version_method() -> None:
     with pytest.raises(pydantic.ValidationError, match=re.escape("applies only when version_method is 'calver'")):
         _project_config_project(version_method="semver", calver_format="(YY.MM).N")
@@ -113,7 +118,7 @@ def test_project_config_rejects_calver_format_for_another_version_method() -> No
 
 def test_project_config_rejects_a_hand_written_cycle_match_beside_a_date_format() -> None:
     with pytest.raises(pydantic.ValidationError, match=re.escape("not both")):
-        _project_config_project(calver_format="(YY.MM).N", cycle_match=r"^(\d+)\.")
+        _project_config_project(version_method="calver", calver_format="(YY.MM).N", cycle_match=r"^(\d+)\.")
 
 
 def test_project_config_rejects_a_malformed_date_format() -> None:
@@ -211,3 +216,106 @@ def test_project_config_accepts_template_urls() -> None:
 def test_project_config_rejects_template_url_on_other_host() -> None:
     with pytest.raises(pydantic.ValidationError, match="not allowed"):
         _project_config(start_vote_template_url="https://example.com/vote.txt")
+
+
+def test_project_config_sync_mode_defaults_to_merge() -> None:
+    assert _project_config().sync_mode == "merge"
+
+
+def test_project_config_sync_mode_rejects_unknown_value() -> None:
+    with pytest.raises(pydantic.ValidationError):
+        api.ProjectConfigArgs.model_validate({"project_key": "tooling", "committee_key": "tooling", "sync_mode": "x"})
+
+
+def test_full_sync_fills_omitted_policy_fields_with_defaults() -> None:
+    args = api.ProjectConfigPolicyArgs.model_validate({"min_hours": 72})
+
+    completed = project_writer._complete_policy_args(args)
+
+    assert completed.min_hours == 72
+    assert completed.vote_mode == sql.VoteMode.EMAIL
+    assert completed.source_artifact_paths == []
+    # Recipients clear only if the field is marked as set, since None is already the default
+    assert "vote_recipients" in completed.model_fields_set
+    assert "announce_recipients" in completed.model_fields_set
+    assert completed.vote_recipients is None
+    assert "manual_vote" not in completed.model_fields_set
+
+
+def test_full_sync_keeps_manual_vote_in_place_of_vote_mode() -> None:
+    args = api.ProjectConfigPolicyArgs.model_validate({"manual_vote": True})
+
+    completed = project_writer._complete_policy_args(args)
+
+    assert "vote_mode" not in completed.model_fields_set
+
+
+def test_full_sync_with_no_policy_block_resets_whole_policy() -> None:
+    completed = project_writer._complete_policy_args(None)
+
+    assert "release_checklist" in completed.model_fields_set
+
+
+def test_full_sync_clears_omitted_project_fields_but_not_name() -> None:
+    project = _project()
+    args = api.ProjectConfigProjectArgs.model_validate({"description": "Kept"})
+
+    completed = project_writer._complete_project_args(project, args)
+
+    assert completed.description == "Kept"
+    assert "name" not in completed.model_fields_set
+    assert "homepage" in completed.model_fields_set
+    assert completed.homepage is None
+    assert "repositories" in completed.model_fields_set
+
+
+def test_full_sync_leaves_default_version_scheme_alone() -> None:
+    project = _project()
+    args = api.ProjectConfigProjectArgs()
+
+    assert project_writer._version_scheme_resets(project, args) == {}
+
+
+def test_full_sync_resets_only_version_fields_that_differ() -> None:
+    project = _project(version_pattern=r"\d+", branch_template="rel/{x}")
+    args = api.ProjectConfigProjectArgs.model_validate({"branch_template": "rel/{x}"})
+
+    assert project_writer._version_scheme_resets(project, args) == {"version_pattern": None}
+
+
+def test_full_sync_moves_calver_project_back_to_simple() -> None:
+    project = _project(version_method=sql.VersionMethod.CALVER, calver_format="YY.MM", cycle_match="x")
+    args = api.ProjectConfigProjectArgs()
+
+    resets = project_writer._version_scheme_resets(project, args)
+
+    assert resets["version_method"] == sql.VersionMethod.SIMPLE
+    assert resets["cycle_match"] is None
+    assert "calver_format" not in resets
+
+
+def test_full_sync_never_resets_cycle_match_for_calver_in_file() -> None:
+    project = _project(version_method=sql.VersionMethod.CALVER, calver_format="YY.MM", cycle_match="x")
+    args = api.ProjectConfigProjectArgs.model_validate({"version_method": "calver"})
+
+    resets = project_writer._version_scheme_resets(project, args)
+
+    assert "cycle_match" not in resets
+    assert resets == {"calver_format": None}
+
+
+def test_full_asf_yaml_update_is_marked_and_still_counts_as_synced() -> None:
+    project = _project()
+
+    project.mark_updated(by="system", update_type=sql.UpdateType.ASFYAML_FULL)
+
+    assert project.is_synced_from_asf_yaml
+    assert project.updated_by_display == ".asf.yaml (full)"
+
+
+def test_manual_update_is_not_synced_from_asf_yaml() -> None:
+    project = _project()
+
+    project.mark_updated(by="alice", update_type=sql.UpdateType.MANUAL)
+
+    assert not project.is_synced_from_asf_yaml

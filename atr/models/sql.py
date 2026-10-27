@@ -237,6 +237,7 @@ class UpdateType(enum.StrEnum):
     MANUAL = "manual"
     BOOTSTRAP = "bootstrap"
     ASFYAML = "asfyaml"
+    ASFYAML_FULL = "asfyaml_full"
 
 
 class QuarantineStatus(enum.Enum):
@@ -1231,6 +1232,8 @@ class Project(sqlmodel.SQLModel, table=True):
                 return "bootstrap"
             case UpdateType.ASFYAML:
                 return ".asf.yaml"
+            case UpdateType.ASFYAML_FULL:
+                return ".asf.yaml (full)"
             case UpdateType.MANUAL:
                 return self.updated_by or "unknown"
 
@@ -1238,6 +1241,11 @@ class Project(sqlmodel.SQLModel, table=True):
         self.updated = datetime.datetime.now(datetime.UTC)
         self.updated_by = by
         self.update_type = update_type
+
+    @property
+    def is_synced_from_asf_yaml(self) -> bool:
+        """Whether the project's last update came from .asf.yaml, in either sync mode."""
+        return self.update_type in {UpdateType.ASFYAML, UpdateType.ASFYAML_FULL}
 
     @property
     def is_active(self) -> bool:

@@ -609,7 +609,8 @@ class ProjectConfigProjectArgs(schema.Strict):
         date_format = self.calver_format.strip() if self.calver_format else None
         if date_format is None:
             return self
-        if (self.version_method is not None) and (self.version_method is not sql.VersionMethod.CALVER):
+        # The method must travel with the format, so a file never relies on what ATR already holds
+        if self.version_method is not sql.VersionMethod.CALVER:
             raise ValueError("Field 'calver_format' applies only when version_method is 'calver'")
         if self.cycle_match and self.cycle_match.strip():
             raise ValueError("Set either 'calver_format' or 'cycle_match', not both")
@@ -644,6 +645,7 @@ class ProjectConfigArgs(schema.Strict):
     committee_key: safe.CommitteeKey = schema.example("example")
     project: ProjectConfigProjectArgs | None = None
     policy: ProjectConfigPolicyArgs | None = None
+    sync_mode: Literal["merge", "full"] = "merge"
 
     @pydantic.model_validator(mode="after")
     def _validate_recipient_domains(self) -> Self:

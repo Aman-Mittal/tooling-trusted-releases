@@ -319,3 +319,11 @@ def test_export_splits_comma_joined_columns_into_sequences() -> None:
 
     assert metadata["categories"] == ["data", "storage"]
     assert metadata["programming_languages"] == ["c", "python"]
+
+
+def test_export_emits_full_sync_mode_on_request() -> None:
+    project = sql.Project(key="example", name="Apache Example", committee_key="tooling")
+
+    exported = strictyaml.load(projects._asf_yaml_export(project, full=True)).data
+
+    assert exported["project"]["features"] == {"atr_sync": "true", "atr_sync_mode": "full"}

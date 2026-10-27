@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import datetime
 import sqlite3
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import sqlalchemy.exc
 
@@ -40,6 +40,10 @@ import atr.util as util
 
 if TYPE_CHECKING:
     import atr.shared as shared
+
+_VERSION_SCHEME_FIELDS: Final = frozenset(
+    {"version_method", "version_pattern", "cycle_match", "calver_format", "branch_template"}
+)
 
 
 class GeneralPublic:
@@ -534,9 +538,12 @@ class FoundationAdmin(FoundationCommitter):
             await self.__data.begin_immediate()
             project, created = await self.__resolve_or_create_project_no_commit(args)
             project_args = args.project
+            policy_args = args.policy
+            if args.sync_mode == "full":
+                project_args = _complete_project_args(project, project_args)
+                policy_args = _complete_policy_args(policy_args)
             if (project_args is not None) and project_args.model_fields_set:
                 await self.__apply_project_args_no_commit(project, project_args)
-            policy_args = args.policy
             if (policy_args is not None) and policy_args.model_fields_set:
                 policy_update = api.PolicyUpdateArgs(
                     project=args.project_key,
@@ -613,13 +620,6 @@ class FoundationAdmin(FoundationCommitter):
         }
         list_fields = {"repositories", "standards"}
         csv_fields = {"categories", "programming_languages"}
-        version_scheme_fields = {
-            "version_method",
-            "version_pattern",
-            "cycle_match",
-            "calver_format",
-            "branch_template",
-        }
         provided = args.model_fields_set
 
         for field in str_fields & provided:
@@ -633,7 +633,7 @@ class FoundationAdmin(FoundationCommitter):
             items = [str(item).strip() for item in getattr(args, field) or []]
             joined = ", ".join(item for item in items if item)
             setattr(project, field, joined or None)
-        if version_scheme_fields & provided:
+        if _VERSION_SCHEME_FIELDS & provided:
             _apply_version_scheme(project, args, provided)
             await cycles.reassign_release_cycles(self.__data, project)
             await catalog_site.queue_regeneration(self.__data, self.__asf_uid, project.key)
@@ -709,3 +709,56 @@ async def _build_and_add_project(
         project.release_policy = super_project.release_policy.duplicate()
     data.add(project)
     return project
+
+
+def _complete_policy_args(args: api.ProjectConfigPolicyArgs | None) -> api.ProjectConfigPolicyArgs:
+    # Full sync treats an omitted policy field as "set to the default", so we
+    # fill each one in and let the normal edit path apply and validate them
+    args = args or api.ProjectConfigPolicyArgs()
+    provided = args.model_fields_set
+    defaults = sql.ReleasePolicy()
+    missing: dict[str, object] = {}
+    for field in api.ProjectConfigPolicyArgs.model_fields:
+        if field in provided:
+            continue
+        # manual_vote and vote_mode are alternatives, and the latter carries the default
+        if (field == "manual_vote") or ((field == "vote_mode") and ("manual_vote" in provided)):
+            continue
+        missing[field] = None if field.endswith("_recipients") else getattr(defaults, field)
+    return args.model_copy(update=missing)
+
+
+def _complete_project_args(
+    project: sql.Project, args: api.ProjectConfigProjectArgs | None
+) -> api.ProjectConfigProjectArgs:
+    # The name is required to exist at all, so an omitted one is never cleared
+    args = args or api.ProjectConfigProjectArgs()
+    provided = args.model_fields_set
+    missing: dict[str, object] = {
+        field: None
+        for field in api.ProjectConfigProjectArgs.model_fields
+        if (field not in provided) and (field != "name") and (field not in _VERSION_SCHEME_FIELDS)
+    }
+    missing.update(_version_scheme_resets(project, args))
+    return args.model_copy(update=missing)
+
+
+def _version_scheme_resets(project: sql.Project, args: api.ProjectConfigProjectArgs) -> dict[str, object]:
+    # Providing any of these reassigns every release's cycle and queues a site
+    # rebuild, so we only reset a field that currently differs from its default
+    provided = args.model_fields_set
+    method = args.version_method or sql.VersionMethod.SIMPLE
+    resets: dict[str, object] = {}
+    if ("version_method" not in provided) and (project.version_method is not sql.VersionMethod.SIMPLE):
+        resets["version_method"] = sql.VersionMethod.SIMPLE
+    for field in ("version_pattern", "branch_template"):
+        if (field not in provided) and (getattr(project, field) is not None):
+            resets[field] = None
+    # A calver project derives its cycle_match from calver_format, and no other
+    # project may have a calver_format, so each is only ours to reset on its own side
+    if method is sql.VersionMethod.CALVER:
+        if ("calver_format" not in provided) and (project.calver_format is not None):
+            resets["calver_format"] = None
+    elif ("cycle_match" not in provided) and (project.cycle_match is not None):
+        resets["cycle_match"] = None
+    return resets

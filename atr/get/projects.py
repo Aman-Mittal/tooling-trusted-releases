@@ -123,7 +123,9 @@ async def project_yaml(
     if not (is_committee_member or session.is_admin):
         raise base.ASFQuartException("You are not a member of this project's committee", errorcode=403)
 
-    yaml_text = _asf_yaml_export(project)
+    full = project.update_type == sql.UpdateType.ASFYAML_FULL
+    yaml_merge = _asf_yaml_export(project, full=False)
+    yaml_full = _asf_yaml_export(project, full=True)
 
     page = htm.Block()
     page.p[htm.a(".atr-back-link", href=util.as_url(view, project_key=project.key))["← Back to project"]]
@@ -137,6 +139,7 @@ async def project_yaml(
         htm.code[".asf.yaml"],
         " to keep this metadata in sync from the repository side.",
     ]
+    page.append(_render_asf_yaml_mode_choice(full=full))
 
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
@@ -147,14 +150,18 @@ async def project_yaml(
             data_clipboard_target="#asf-yaml-output",
         )[htm.i(".bi.bi-clipboard"), " Copy"],
     ]
-    card.div(".card-body")[htm.pre("#asf-yaml-output.mb-0")[yaml_text]]
+    card.div(".card-body")[
+        htm.pre("#asf-yaml-output.mb-0", data_yaml_merge=yaml_merge, data_yaml_full=yaml_full)[
+            yaml_full if full else yaml_merge
+        ]
+    ]
     page.append(card.collect())
 
     return await template.blank(
         title="Export .asf.yaml",
         description=f"The .asf.yaml project block for {project.display_name}.",
         content=page.collect(),
-        javascripts=["clipboard-copy"],
+        javascripts=["clipboard-copy", "asf-yaml-mode"],
     )
 
 
@@ -337,7 +344,7 @@ async def view(
                 ]
             ]
         )
-    if can_edit_metadata and (project.update_type == sql.UpdateType.ASFYAML):
+    if can_edit_metadata and project.is_synced_from_asf_yaml:
         page.append(_render_asf_yaml_notice(project, can_export=can_manage_project_actions))
     page.append(
         await _render_header_cards(project, can_manage_project_actions, session, is_sole_active_project, is_privileged)
@@ -396,13 +403,16 @@ async def _approval_request_element(approval: sql.ApprovalRequest) -> htm.Elemen
     ]
 
 
-def _asf_yaml_export(project: sql.Project) -> str:
+def _asf_yaml_export(project: sql.Project, *, full: bool = False) -> str:
     block: dict[str, object] = {"metadata": _asf_yaml_metadata(project)}
     policy = _asf_yaml_policy(project)
     if policy:
         block["policy"] = policy
     # atr_sync defaults to on, so we emit it as a visible reminder the sync exists
-    block["features"] = {"atr_sync": "true"}
+    features: dict[str, str] = {"atr_sync": "true"}
+    if full:
+        features["atr_sync_mode"] = "full"
+    block["features"] = features
     return strictyaml.as_document({"project": block}).as_yaml()
 
 
@@ -802,13 +812,46 @@ async def _render_actions_card(
     return card.collect()
 
 
+def _render_asf_yaml_mode_choice(*, full: bool) -> htm.Element:
+    # The file is shown in whichever mode the project last synced in, and the
+    # script swaps the text when the choice changes
+    radios = []
+    for value, label in (("merge", "Merge"), ("full", "Full")):
+        radio_id = f"atr-sync-mode-{value}"
+        radios.append(
+            htm.div(".form-check.form-check-inline")[
+                htpy.input(
+                    type="radio",
+                    class_="form-check-input",
+                    name="atr_sync_mode",
+                    id=radio_id,
+                    value=value,
+                    checked=(value == "full") == full,
+                ),
+                htpy.label(class_="form-check-label", for_=radio_id)[label],
+            ]
+        )
+    return htm.div(".mb-3")[
+        htm.div[*radios],
+        htm.div(".form-text")[
+            "Merge updates only the fields the file sets, and the rest keep their values in ATR.",
+            " Full also resets every field the file leaves out to its default, so the file is the whole configuration.",
+        ],
+    ]
+
+
 def _render_asf_yaml_notice(project: sql.Project, *, can_export: bool) -> htm.Element:
     export_link = (
         htm.a(".alert-link.ms-1", href=util.as_url(project_yaml, project_key=project.key))["Export .asf.yaml"]
         if can_export
         else ""
     )
-    return htm.div(".alert.alert-info", role="alert")[strings.ASF_YAML_SYNC_NOTICE, export_link]
+    notice = (
+        strings.ASF_YAML_FULL_SYNC_NOTICE
+        if (project.update_type == sql.UpdateType.ASFYAML_FULL)
+        else strings.ASF_YAML_SYNC_NOTICE
+    )
+    return htm.div(".alert.alert-info", role="alert")[notice, export_link]
 
 
 def _render_categories_section(project: sql.Project, *, readonly: bool) -> htm.Element:

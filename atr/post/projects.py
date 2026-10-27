@@ -164,12 +164,17 @@ async def view(
     URL: /projects/<name>
     """
     project_key = project_form.project_key
-    was_synced = await _is_synced_from_asf_yaml(project_key)
+    synced_type = await _asf_yaml_update_type(project_key)
     response = await _VIEW_HANDLERS[type(project_form)](session, project_form)
     # A save marks the project as manually updated, so the change in
     # state tells us the edit went in - and that the next push may well undo it
-    if was_synced and (not await _is_synced_from_asf_yaml(project_key)):
-        await quart.flash(strings.ASF_YAML_SYNC_NOTICE, "warning")
+    if (synced_type is not None) and (await _asf_yaml_update_type(project_key) is None):
+        notice = (
+            strings.ASF_YAML_FULL_SYNC_NOTICE
+            if (synced_type == sql.UpdateType.ASFYAML_FULL)
+            else strings.ASF_YAML_SYNC_NOTICE
+        )
+        await quart.flash(notice, "warning")
     return response
 
 
@@ -208,6 +213,14 @@ def _action_eligibility_error(
     return None
 
 
+async def _asf_yaml_update_type(project_key: safe.ProjectKey) -> sql.UpdateType | None:
+    async with db.session() as data:
+        project = await data.project(key=str(project_key)).get()
+    if (project is None) or (not project.is_synced_from_asf_yaml):
+        return None
+    return project.update_type
+
+
 async def _complete_action(
     session: web.Committer,
     action: sql.ApprovalAction,
@@ -227,12 +240,6 @@ async def _complete_action(
                 if e.status != 404:
                     raise
         await wacm.project.archive(project_key, approval_request_id)
-
-
-async def _is_synced_from_asf_yaml(project_key: safe.ProjectKey) -> bool:
-    async with db.session() as data:
-        project = await data.project(key=str(project_key)).get()
-    return (project is not None) and (project.update_type == sql.UpdateType.ASFYAML)
 
 
 async def _persist_approval(

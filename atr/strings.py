@@ -37,6 +37,10 @@ FILE_CLASS_SBOM: Final = "SBOM"
 FILE_CLASS_SOURCE: Final = "Source artifact"
 
 # Project metadata notices
+ASF_YAML_FULL_SYNC_NOTICE: Final = (
+    "This project's configuration is synced from .asf.yaml in full mode. The next push to the repository's default"
+    " branch will update all settings, changes made here are not permanent."
+)
 ASF_YAML_SYNC_NOTICE: Final = (
     "This project's metadata is synced from .asf.yaml. The next push to the repository's default branch"
     " overwrites settings with any values the file sets, so make any permanent changes there."

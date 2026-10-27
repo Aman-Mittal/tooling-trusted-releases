@@ -217,6 +217,23 @@ the next push imports the supplied values, overwriting manual changes to those f
 Correct the name in `.asf.yaml` or its linked DOAP file so that subsequent imports preserve the
 correction.
 
+By default, synchronization only updates the fields present in the file. A field you remove from
+`.asf.yaml` keeps its value in ATR, including one set earlier by hand. To make the file the whole
+configuration, set `atr_sync_mode: full` under `features`:
+
+```yaml
+project:
+  features:
+    atr_sync: true
+    atr_sync_mode: full
+```
+
+With `full`, every field that `.asf.yaml` can set but the file leaves out is reset to the ATR
+default on each push. This is also the only way to clear a list from the file. The project name is
+never reset. The default mode is `merge`. A project created by a full push starts from the defaults
+too, rather than from a parent project's settings, since anything the file leaves out is a default.
+The export page can produce the file in either mode.
+
 While the most recent update to a project came from `.asf.yaml`, ATR shows a notice on the project
 page to anyone who can edit it, and repeats it when they save a change there. The notice clears once
 somebody edits the project in ATR, and returns with the next push.

@@ -1024,15 +1024,18 @@ async def project_config_upsert(
     Upsert a project's full configuration.
 
     Creates a project under the specified key if it does not yet exist.
-    Otherwise, updates all specified fields for an existing project.
+    Otherwise, updates all specified fields for an existing project. With
+    sync_mode "full", every field this endpoint can set but the caller omitted
+    is reset to its default as well.
 
     Requires a system token. This endpoint backs the .asf.yaml processor, which
     establishes upstream that the caller may act for the named committee. For an
     existing project, committee_key must match the current value.
     """
     try:
+        update_type = sql.UpdateType.ASFYAML_FULL if (data.sync_mode == "full") else sql.UpdateType.ASFYAML
         async with storage.write_as_system(storage.WriteAsAsfYamlService) as waays:
-            created = await waays.project_upsert_config(data, update_type=sql.UpdateType.ASFYAML)
+            created = await waays.project_upsert_config(data, update_type=update_type)
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e
     except ValueError as e:
